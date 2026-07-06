@@ -1,0 +1,14 @@
+# Secrets — never commit
+.env
+
+# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# Regenerable caches (photos + screenshots are re-fetched on run)
+backgrounds/
+screenshots/
+
+# macOS
+.DS_Store

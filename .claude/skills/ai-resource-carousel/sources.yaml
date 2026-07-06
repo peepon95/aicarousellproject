@@ -1,0 +1,16 @@
+# Sources the skill pulls from. Add/remove freely.
+github:
+  topics:
+    - "claude+skills"
+    - "mcp+server"
+    - "llm+agent"
+    - "ai+tools"
+  per_page: 15
+huggingface:
+  models: "https://huggingface.co/api/models?sort=likes&limit=15"
+  datasets: "https://huggingface.co/api/datasets?sort=likes&limit=15"
+hackernews:
+  query: "https://hn.algolia.com/api/v1/search?query=llm&tags=story"
+web_search:
+  - "site:docs.claude.com skills"
+  - "best free AI courses 2026"
