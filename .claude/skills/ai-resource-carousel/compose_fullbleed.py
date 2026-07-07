@@ -98,20 +98,35 @@ def build(bg_name, page, title, subtitle, shot_name, bullets, why="Why you'll ne
     pf=font(30,True); bw=d.textlength(page,font=pf)
     d.rounded_rectangle([(W-bw)//2-24, 70, (W+bw)//2+24, 128], radius=14, fill=(220,40,40))
     d.text(((W-bw)//2, 82), page, font=pf, fill=(255,255,255))
-    # title + subtitle
-    center_outlined(d, 170, title, font(88,True), w=5)
-    center_outlined(d, 275, subtitle, font(40,True), w=3)
-    # screenshot card
+    # title — auto-shrink + wrap to at most 2 lines so it never bleeds off frame
+    tsize = 88
+    while tsize > 44:
+        tf = font(tsize, True)
+        tlines = _wrap(d, title, tf, int(W*0.88))
+        if len(tlines) <= 2 and max(d.textlength(l, font=tf) for l in tlines) <= W*0.9:
+            break
+        tsize -= 6
+    tf = font(tsize, True); tlines = _wrap(d, title, tf, int(W*0.88))[:2]
+    ty = 158; tlh = tsize + 12
+    for ln in tlines:
+        center_outlined(d, ty, ln, tf, w=5); ty += tlh
+    # subtitle (wrapped, up to 2 lines) directly under the title
+    if subtitle:
+        sf = font(38, True)
+        for ln in _wrap(d, subtitle, sf, int(W*0.9))[:2]:
+            center_outlined(d, ty, ln, sf, w=3); ty += 46
+    # screenshot card — starts below whatever height the title block used
+    card_top = max(350, ty + 24)
     if shot_name and os.path.exists(os.path.join(SHOT,shot_name)):
         s=Image.open(os.path.join(SHOT,shot_name)).convert("RGBA")
         tw=int(W*0.82); th=int(s.height*tw/s.width); s=s.resize((tw,th))
         sh=Image.new("RGBA",(W,H),(0,0,0,0))
-        ImageDraw.Draw(sh).rectangle([(W-tw)//2+8,350+8,(W-tw)//2+tw+8,350+th+8],fill=(0,0,0,150))
+        ImageDraw.Draw(sh).rectangle([(W-tw)//2+8,card_top+8,(W-tw)//2+tw+8,card_top+th+8],fill=(0,0,0,150))
         img=Image.alpha_composite(img,sh.filter(ImageFilter.GaussianBlur(18)))
-        img.alpha_composite(s,((W-tw)//2,350)); d=ImageDraw.Draw(img)
-        by=350+th+40
+        img.alpha_composite(s,((W-tw)//2,card_top)); d=ImageDraw.Draw(img)
+        by=card_top+th+40
     else:
-        by=780
+        by=max(780, card_top)
     # why header
     hf=font(46,True); hw=d.textlength(why,font=hf)
     d.rounded_rectangle([(W-hw)//2-20,by,(W+hw)//2+20,by+66],radius=10,fill=(220,40,40))

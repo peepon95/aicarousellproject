@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Carousel Studio</title>
+<style>
+  :root { --bg:#0f0d0b; --card:#1b1713; --line:#2e2822; --ink:#f3ece2; --mut:#a99e8f; --acc:#e8a15a; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 -apple-system,system-ui,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:22px 24px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; }
+  header h1 { font-size:19px; margin:0; letter-spacing:.3px; }
+  header span { color:var(--mut); font-size:13px; }
+  main { max-width:960px; margin:0 auto; padding:24px; }
+  .modes { display:flex; gap:8px; margin-bottom:16px; }
+  .modes button { flex:1; padding:12px; background:var(--card); color:var(--mut); border:1px solid var(--line);
+    border-radius:12px; cursor:pointer; font-size:14px; }
+  .modes button.on { color:var(--ink); border-color:var(--acc); background:#241d16; }
+  textarea, input { width:100%; background:var(--card); color:var(--ink); border:1px solid var(--line);
+    border-radius:10px; padding:11px; font:inherit; margin-bottom:10px; }
+  textarea { min-height:70px; resize:vertical; }
+  .row { display:flex; gap:10px; }
+  .row > * { flex:1; }
+  button.go { background:var(--acc); color:#221706; border:none; border-radius:10px; padding:12px 18px;
+    font-weight:600; cursor:pointer; }
+  button.go:disabled { opacity:.5; cursor:default; }
+  .hint { color:var(--mut); font-size:13px; margin:2px 0 10px; }
+  .cand { display:flex; gap:12px; align-items:flex-start; background:var(--card); border:1px solid var(--line);
+    border-radius:12px; padding:12px; margin-bottom:8px; }
+  .cand.sel { border-color:var(--acc); }
+  .cand input[type=checkbox] { margin-top:4px; width:18px; height:18px; accent-color:var(--acc); flex:0 0 auto; }
+  .cand .meta { flex:1; }
+  .cand .nm { font-weight:600; }
+  .cand .ds { color:var(--mut); font-size:13px; }
+  .cand .hk { margin-top:6px; }
+  .cand .hk input { margin:0; font-size:13px; }
+  .stars { color:var(--acc); font-size:13px; white-space:nowrap; }
+  .section { margin-top:26px; }
+  h2 { font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--mut); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+  .grid a img { width:100%; border-radius:10px; border:1px solid var(--line); display:block; }
+  .err { color:#e88; font-size:13px; }
+  .spin { color:var(--mut); }
+</style>
+</head>
+<body>
+<header><h1>🎠 AI Carousel Studio</h1><span>topic · links · reference — pick, approve, build</span></header>
+<main>
+  <div class="modes">
+    <button data-mode="topic" class="on">Type a topic</button>
+    <button data-mode="links">Paste links</button>
+    <button data-mode="reference">Reference mimic</button>
+  </div>
+
+  <div id="input-topic">
+    <input id="q-topic" placeholder="e.g. vibe coding tools, claude skills, mcp servers">
+    <div class="hint">Finds trending GitHub repos for the topic, screenshots each, builds a carousel.</div>
+  </div>
+  <div id="input-links" hidden>
+    <textarea id="q-links" placeholder="Paste GitHub repos or tool URLs, one per line"></textarea>
+    <div class="hint">Each link becomes one slide (GitHub gets star count + description auto-filled).</div>
+  </div>
+  <div id="input-reference" hidden>
+    <input id="q-reference" placeholder="Paste a TikTok / Instagram post URL">
+    <div class="hint">Phase 2: extracts the post's palette + hook structure and applies it. Not wired yet.</div>
+  </div>
+
+  <button class="go" id="pull">Find resources →</button>
+  <div id="pull-status" class="hint"></div>
+
+  <div class="section" id="shortlist-wrap" hidden>
+    <h2>Shortlist — pick your winners &amp; tweak hooks</h2>
+    <div id="candidates"></div>
+    <div class="row" style="margin-top:14px">
+      <input id="cover-hook" placeholder="Cover hook (optional)">
+      <input id="bg-query" value="cozy interior warm light" placeholder="Background vibe">
+    </div>
+    <button class="go" id="build">Build carousel ✨</button>
+    <div id="build-status" class="hint"></div>
+  </div>
+
+  <div class="section" id="result-wrap" hidden>
+    <h2>Your slides</h2>
+    <div class="grid" id="slides"></div>
+    <div id="canva-box" style="margin-top:18px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px">
+      <h2 style="margin-top:0">Push to Canva (editable)</h2>
+      <div class="hint">Outline saved. In Claude, say <b>"send the latest carousel to Canva"</b> — I'll run the outline-review → generate flow and hand back an editable design link.</div>
+      <textarea id="caption" readonly style="min-height:120px"></textarea>
+      <button class="go" id="copy-caption">Copy caption</button>
+    </div>
+  </div>
+</main>
+
+<script>
+let mode = "topic";
+const $ = s => document.querySelector(s);
+
+document.querySelectorAll(".modes button").forEach(b => b.onclick = () => {
+  mode = b.dataset.mode;
+  document.querySelectorAll(".modes button").forEach(x => x.classList.toggle("on", x === b));
+  ["topic","links","reference"].forEach(m => $("#input-" + m).hidden = (m !== mode));
+});
+
+$("#pull").onclick = async () => {
+  const query = $("#q-" + mode).value.trim();
+  if (!query) return;
+  setStatus("#pull-status", "Pulling…", true);
+  $("#shortlist-wrap").hidden = true;
+  try {
+    const r = await fetch("/pull", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({mode, query})});
+    const d = await r.json();
+    if (d.error) return setStatus("#pull-status", d.error, false, true);
+    renderCandidates(d.candidates || []);
+    setStatus("#pull-status", `Found ${d.candidates.length}.`, false);
+  } catch(e) { setStatus("#pull-status", e.message, false, true); }
+};
+
+function renderCandidates(cands) {
+  const box = $("#candidates"); box.innerHTML = "";
+  cands.forEach((c, i) => {
+    const el = document.createElement("div"); el.className = "cand sel";
+    el.innerHTML = `
+      <input type="checkbox" checked>
+      <div class="meta">
+        <div class="nm">${esc(c.name)}</div>
+        <div class="ds">${esc(c.desc || c.url)}</div>
+        <div class="hk"><input placeholder="slide hook (≤7 words)" value=""></div>
+      </div>
+      <div class="stars">${c.stars ? "★ " + c.stars.toLocaleString() : ""}</div>`;
+    el.dataset.idx = i; el._data = c;
+    const cb = el.querySelector("input[type=checkbox]");
+    cb.onchange = () => el.classList.toggle("sel", cb.checked);
+    box.appendChild(el);
+  });
+  $("#shortlist-wrap").hidden = false;
+}
+
+$("#build").onclick = async () => {
+  const resources = [...document.querySelectorAll(".cand")].filter(el =>
+    el.querySelector("input[type=checkbox]").checked).map(el => ({
+      ...el._data, hook: el.querySelector(".hk input").value.trim()
+    }));
+  if (!resources.length) return setStatus("#build-status", "Pick at least one.", false, true);
+  setStatus("#build-status", `Building ${resources.length + 1} slides… (screenshots take a moment)`, true);
+  try {
+    const r = await fetch("/build", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({resources, bg_query: $("#bg-query").value,
+        cover_title: "AI RESOURCES", cover_hook: $("#cover-hook").value})});
+    const d = await r.json();
+    if (d.error) return setStatus("#build-status", d.error, false, true);
+    const grid = $("#slides"); grid.innerHTML = "";
+    d.slides.forEach(s => {
+      const url = "/out/" + s + "?t=" + Date.now();
+      grid.innerHTML += `<a href="${url}" target="_blank"><img src="${url}"></a>`;
+    });
+    if (d.outline) $("#caption").value = d.outline.caption || "";
+    $("#result-wrap").hidden = false;
+    setStatus("#build-status", "Done — credits: " + (d.credits||[]).join("; "), false);
+    $("#result-wrap").scrollIntoView({behavior:"smooth"});
+  } catch(e) { setStatus("#build-status", e.message, false, true); }
+};
+
+$("#copy-caption").onclick = () => navigator.clipboard.writeText($("#caption").value);
+
+function setStatus(sel, msg, spin, err) {
+  const el = $(sel); el.textContent = msg;
+  el.className = "hint" + (err ? " err" : "") + (spin ? " spin" : "");
+}
+function esc(s){ return (s||"").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+</script>
+</body>
+</html>
