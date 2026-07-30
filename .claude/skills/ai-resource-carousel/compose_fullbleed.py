@@ -12,20 +12,30 @@ import os, random, textwrap
 
 W, H = 1080, 1350
 HERE = os.path.dirname(__file__)
-# backgrounds/, screenshots/, out/ live at the PROJECT ROOT (three levels up
-# from this skill dir) so fetch_pexels.py, capture_screenshot.py and this
-# compositor all read/write the same folders.
-ROOT = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
+# All generators share a writable data root. Locally this remains the project
+# folder; Vercel points it at /tmp through webapp.pipeline.
+PROJECT_ROOT = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
+ROOT = os.environ.get("AICAROUSEL_DATA_DIR", PROJECT_ROOT)
 BG = os.path.join(ROOT, "backgrounds"); SHOT = os.path.join(ROOT, "screenshots")
-OUT = os.path.join(ROOT, "out"); os.makedirs(OUT, exist_ok=True)
+OUT = os.path.join(ROOT, "out")
+for folder in (BG, SHOT, OUT):
+    os.makedirs(folder, exist_ok=True)
 
-# macOS system fonts (the original DejaVu paths are Linux-only).
-_FONTS = {
-    True:  "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-    False: "/System/Library/Fonts/Supplemental/Arial.ttf",
+_FONT_CANDIDATES = {
+    True: (
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ),
+    False: (
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ),
 }
 def font(sz, bold=True):
-    return ImageFont.truetype(_FONTS[bool(bold)], sz)
+    for path in _FONT_CANDIDATES[bool(bold)]:
+        if os.path.exists(path):
+            return ImageFont.truetype(path, sz)
+    return ImageFont.load_default(size=sz)
 
 def cover_photo(name):
     if not name:

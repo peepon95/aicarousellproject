@@ -12,7 +12,9 @@ import re
 from playwright.sync_api import sync_playwright
 
 HERE = os.path.dirname(__file__)
-SHOT = os.path.normpath(os.path.join(HERE, "..", "..", "..", "screenshots"))
+PROJECT_ROOT = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
+DATA_ROOT = os.environ.get("AICAROUSEL_DATA_DIR", PROJECT_ROOT)
+SHOT = os.path.join(DATA_ROOT, "screenshots")
 os.makedirs(SHOT, exist_ok=True)
 
 def _dismiss_consent(page):
@@ -44,6 +46,10 @@ def _dismiss_consent(page):
 
 def capture(url, name, clip_height=820):
     """Screenshot the top of a page. Returns local path."""
+    if os.environ.get("VERCEL"):
+        raise RuntimeError(
+            "Browser capture is disabled on Vercel; using the generated preview fallback."
+        )
     out = os.path.join(SHOT, name if name.endswith(".png") else name + ".png")
     with sync_playwright() as p:
         browser = p.chromium.launch()

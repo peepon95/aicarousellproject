@@ -13,6 +13,30 @@ A localhost UI + daily agent wrapped around the `ai-resource-carousel` skill eng
 Flow: pick a **mode** → **Find resources** → check/uncheck the shortlist and tweak
 each hook → **Build carousel** → previews render, click to open/download PNGs (in `out/`).
 
+## Deploy on Vercel
+
+The repository includes a root `app.py` entrypoint for Vercel's FastAPI
+runtime. Import the GitHub repository with:
+
+- Application preset: **FastAPI**
+- Root directory: `/`
+- Build command: leave blank
+- Output directory: leave blank
+- Install command: `pip install -r requirements.txt`
+
+Add `OPENAI_API_KEY` and `PEXELS_API_KEY` in Vercel's Environment Variables.
+`GITHUB_TOKEN` and `OPENAI_MODEL` are optional.
+
+After the first deployment, open the project's **Storage** tab and connect a
+**public Vercel Blob** store. Vercel adds `BLOB_READ_WRITE_TOKEN`
+automatically; redeploy once so generated slides and ZIP downloads use durable
+storage.
+
+Vercel uses generated resource cards instead of Playwright browser captures.
+The Remotion repo-video renderer is hidden there because it requires a
+persistent worker and the separate local Remotion project. Both features remain
+available in the local Mac workflow.
+
 ### Modes
 - **Type a topic** — researched tutorial, explainer, or resource roundup with validated sources. ✅
 - **Video link** — public YouTube/Shorts, TikTok, or Instagram Reel → captions/audio transcript → carousel. ✅

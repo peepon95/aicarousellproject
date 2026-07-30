@@ -7,16 +7,29 @@ folders (backgrounds/, screenshots/, out/) exactly like the CLI skill does.
 import os, re, json, sys, urllib.request, urllib.parse, urllib.error, tempfile
 from dotenv import load_dotenv
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKILL = os.path.join(ROOT, ".claude", "skills", "ai-resource-carousel")
-load_dotenv(os.path.join(ROOT, ".env"))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+IS_VERCEL = bool(os.environ.get("VERCEL"))
+DATA_ROOT = os.environ.get("AICAROUSEL_DATA_DIR", "").strip()
+if not DATA_ROOT:
+    DATA_ROOT = (
+        os.path.join(tempfile.gettempdir(), "aicarousel")
+        if IS_VERCEL else PROJECT_ROOT
+    )
+os.environ.setdefault("AICAROUSEL_DATA_DIR", DATA_ROOT)
+
+# ROOT remains the source checkout for backwards compatibility with the local
+# cron helper. Generated media is written under DATA_ROOT instead.
+ROOT = PROJECT_ROOT
+SKILL = os.path.join(PROJECT_ROOT, ".claude", "skills", "ai-resource-carousel")
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 sys.path.insert(0, SKILL)
 
 from fetch_pexels import fetch_background, fetch_backgrounds  # noqa: E402
 from capture_screenshot import capture             # noqa: E402
 import compose_fullbleed as C                      # noqa: E402
 
-OUT = os.path.join(ROOT, "out")
+OUT = os.path.join(DATA_ROOT, "out")
+os.makedirs(OUT, exist_ok=True)
 
 # Product sites belong beside open-source projects in a useful AI-tool roundup.
 # Keep this small and editorial: these are real homepages that screenshot well.
@@ -61,7 +74,7 @@ def cover_hook_for(topic, count=5):
 def _openai_json(prompt, use_web_search=True):
     # Re-read the local file so a key pasted while the dev server is running
     # is picked up without requiring a restart.
-    load_dotenv(os.path.join(ROOT, ".env"), override=True)
+    load_dotenv(os.path.join(PROJECT_ROOT, ".env"), override=True)
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key:
         raise RuntimeError("Add OPENAI_API_KEY to .env to generate topic or video carousels")
@@ -302,7 +315,7 @@ def _video_transcript(url):
 
     from yt_dlp import YoutubeDL
     from openai import OpenAI
-    load_dotenv(os.path.join(ROOT, ".env"), override=True)
+    load_dotenv(os.path.join(PROJECT_ROOT, ".env"), override=True)
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key:
         raise RuntimeError("OPENAI_API_KEY is empty in the saved .env file")

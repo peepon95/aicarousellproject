@@ -14,7 +14,7 @@ serves. Poll job_status(job_id) for progress.
 import os, re, json, base64, shutil, subprocess, threading, time, uuid
 import urllib.request, urllib.error
 
-import pipeline as P
+from . import pipeline as P
 
 REMOTION_DIR = os.environ.get("REMOTION_DIR", "/Users/eevontan/my-video")
 AUDIO_DIR = os.path.join(REMOTION_DIR, "public", "audio")
@@ -28,6 +28,11 @@ SCENES = [
 
 JOBS = {}
 _LOCK = threading.Lock()
+
+
+def rendering_available():
+    """The renderer needs a persistent process and the external Remotion repo."""
+    return not P.IS_VERCEL and os.path.isdir(REMOTION_DIR)
 
 
 # ── GitHub ────────────────────────────────────────────────────────────────────
@@ -196,6 +201,11 @@ def make_voiceover(plan, job=None):
 # ── Render job ────────────────────────────────────────────────────────────────
 
 def start_render(plan):
+    if not rendering_available():
+        raise RuntimeError(
+            "Repo video rendering requires the local Remotion project or a "
+            "dedicated media worker."
+        )
     job_id = uuid.uuid4().hex[:12]
     job = {"status": "queued", "detail": "", "video": None, "error": None,
            "progress": 0.0, "started": time.time(), "repo": plan.get("repo", "")}

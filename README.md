@@ -36,6 +36,21 @@ pipeline, shows you a shortlist to approve, then builds the slides.
 
 **Standalone:** `python .claude/skills/ai-resource-carousel/run.py`
 
+## Deploy the web studio on Vercel
+
+Import this repository with the **FastAPI** preset, keep the root directory at
+`/`, and leave the build/output overrides disabled. Add `OPENAI_API_KEY` and
+`PEXELS_API_KEY` in Vercel's Environment Variables.
+
+After the first deployment, connect a **public Vercel Blob** store from the
+project's Storage tab and redeploy. Blob storage keeps generated slides and ZIP
+downloads available across serverless requests. The hosted version uses
+generated resource preview cards instead of Playwright screenshots and hides
+the local-only Remotion video renderer.
+
+See `webapp/README.md` for the complete deployment settings and local web-app
+commands.
+
 ## The 20% that stays yours
 - Which resources make the cut (your taste).
 - Final Canva tweaks before posting.

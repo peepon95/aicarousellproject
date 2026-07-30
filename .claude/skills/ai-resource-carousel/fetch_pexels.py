@@ -10,8 +10,9 @@ Get a free key instantly at https://www.pexels.com/api/
 import os, json, random, urllib.request, urllib.parse
 
 HERE = os.path.dirname(__file__)
-BG = os.path.join(HERE, "..", "..", "..", "backgrounds")
-BG = os.path.normpath(BG)
+PROJECT_ROOT = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
+DATA_ROOT = os.environ.get("AICAROUSEL_DATA_DIR", PROJECT_ROOT)
+BG = os.path.join(DATA_ROOT, "backgrounds")
 os.makedirs(BG, exist_ok=True)
 CACHE_META = os.path.join(BG, "_attribution.json")
 

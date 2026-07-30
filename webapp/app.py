@@ -12,10 +12,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-import pipeline as P
-import repo_video as RV
+from . import media_storage as M
+from . import pipeline as P
+from . import repo_video as RV
 
-ROOT = P.ROOT
+ROOT = P.DATA_ROOT
 HERE = os.path.dirname(os.path.abspath(__file__))
 app = FastAPI(title="AI Carousel Studio")
 INDEX = os.path.join(HERE, "templates", "index.html")
@@ -36,7 +37,14 @@ app.mount("/inbox", StaticFiles(directory=INBOX), name="inbox")
 @app.get("/", response_class=HTMLResponse)
 def home():
     with open(INDEX, encoding="utf-8") as f:
-        return HTMLResponse(f.read())
+        html = f.read()
+    if not RV.rendering_available():
+        html = html.replace(
+            'id="repo-video-wrap"',
+            'id="repo-video-wrap" hidden',
+            1,
+        )
+    return HTMLResponse(html)
 
 
 class PullReq(BaseModel):
@@ -112,6 +120,10 @@ def screenshot_preview(req: ScreenshotPreviewReq):
         return JSONResponse({"error": "Enter a full link starting with http:// or https://."}, status_code=400)
     safe_name = "".join(c if c.isalnum() else "_" for c in req.name).strip("_")[:50] or "preview"
     try:
+        M.require_blob()
+    except RuntimeError as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+    try:
         path = P.capture(url, f"preview_{safe_name}")
         fallback = False
     except Exception as e:
@@ -122,7 +134,15 @@ def screenshot_preview(req: ScreenshotPreviewReq):
             fallback = True
         except Exception:
             return JSONResponse({"error": f"Screenshot preview failed: {e}"}, status_code=502)
-    return {"image": f"/screenshots/{os.path.basename(path)}", "fallback": fallback}
+    try:
+        image_url = (
+            M.publish_file(path)
+            if M.IS_VERCEL
+            else f"/screenshots/{os.path.basename(path)}"
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"Preview upload failed: {e}"}, status_code=502)
+    return {"image": image_url, "fallback": fallback}
 
 
 @app.post("/download")
@@ -179,6 +199,13 @@ def repo_analyze(req: RepoAnalyzeReq):
 def repo_render(req: RepoRenderReq):
     if not req.plan.get("scenes"):
         return JSONResponse({"error": "Analyze a repo first."}, status_code=400)
+    if not RV.rendering_available():
+        return JSONResponse({
+            "error": (
+                "Repo video rendering is unavailable in the Vercel deployment. "
+                "Run this feature locally or move it to a dedicated media worker."
+            )
+        }, status_code=503)
     return {"job": RV.start_render(req.plan)}
 
 
@@ -196,6 +223,10 @@ def build(req: BuildReq):
     if not resources:
         return JSONResponse({"error": "no resources selected"}, status_code=400)
     try:
+        M.require_blob()
+    except RuntimeError as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+    try:
         result = P.build_carousel(
             resources, bg_query=req.bg_query,
             cover_title=req.cover_title, cover_hook=req.cover_hook or None,
@@ -203,6 +234,11 @@ def build(req: BuildReq):
             include_why_youll_need_it=req.include_why_youll_need_it,
             split_mode=req.split_mode,
             comment_keyword=req.comment_keyword)
+        result = M.publish_carousel(
+            result,
+            P.OUT,
+            os.path.join(ROOT, "backgrounds"),
+        )
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
     return result

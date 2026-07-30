@@ -171,7 +171,7 @@
 <script>
 let mode = "topic";
 let lastBuildResources = [];
-let lastBuild = {slides:[], photos:[]};
+let lastBuild = {slides:[], slideFiles:[], photos:[], carouselDownload:"", photoDownload:""};
 let slideIndex = 0;
 const draftState = {topic:null, video:null};
 const $ = s => document.querySelector(s);
@@ -327,14 +327,23 @@ async function buildCarousel(resources, statusSelector) {
     const d = await r.json();
     if (d.error) { setStatus(statusSelector, d.error, false, true); return false; }
     lastBuildResources = resources;
-    lastBuild = {slides:d.slides || [], photos:d.photos || []};
+    const localSlideUrls = Object.fromEntries((d.slides || []).map(name =>
+      [name, "/out/" + name + "?t=" + Date.now()]));
+    const slideUrls = {...localSlideUrls, ...(d.slide_urls || {})};
+    lastBuild = {
+      slides:(d.slides || []).map(name => slideUrls[name]),
+      slideFiles:d.slides || [],
+      photos:d.photos || [],
+      carouselDownload:d.carousel_download_url || "",
+      photoDownload:d.photo_download_url || ""
+    };
     const slidesBox = $("#slides"); slidesBox.innerHTML = "";
     const series = d.series || [{part:1,title:"Carousel",slides:d.slides || []}];
     series.forEach(group => {
       if (series.length > 1) slidesBox.innerHTML += `<h3 class="series-title">Part ${group.part}: ${esc(group.title || "")}</h3>`;
       const grid = document.createElement("div"); grid.className = "grid";
       (group.slides || []).forEach(s => {
-        const url = "/out/" + s + "?t=" + Date.now();
+        const url = slideUrls[s] || ("/out/" + s + "?t=" + Date.now());
         grid.innerHTML += `<a href="${url}" target="_blank"><img src="${url}"></a>`;
       });
       slidesBox.appendChild(grid);
@@ -369,7 +378,7 @@ $("#edit-carousel").onclick = async () => {
 function showSlide(index) {
   if (!lastBuild.slides.length) return;
   slideIndex = (index + lastBuild.slides.length) % lastBuild.slides.length;
-  $("#slide-image").src = "/out/" + lastBuild.slides[slideIndex] + "?t=" + Date.now();
+  $("#slide-image").src = lastBuild.slides[slideIndex];
   $("#slide-count").textContent = `${slideIndex + 1} / ${lastBuild.slides.length}`;
 }
 $("#preview-slides").onclick = () => {
@@ -387,6 +396,10 @@ document.addEventListener("keydown", e => {
 });
 
 async function downloadZip(kind, files) {
+  const durableUrl = kind === "carousel" ? lastBuild.carouselDownload : lastBuild.photoDownload;
+  if (durableUrl) {
+    const a = document.createElement("a"); a.href = durableUrl; a.click(); return;
+  }
   if (!files.length) return alert(kind === "carousel" ? "Build a carousel first." : "This carousel has no downloaded background photos.");
   const r = await fetch("/download", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({kind, files})});
   if (!r.ok) return alert((await r.json()).error || "Download failed.");
@@ -395,7 +408,7 @@ async function downloadZip(kind, files) {
   a.href = url; a.download = kind === "carousel" ? "carousel-images.zip" : "carousel-photos.zip";
   a.click(); URL.revokeObjectURL(url);
 }
-$("#download-carousel").onclick = () => downloadZip("carousel", lastBuild.slides);
+$("#download-carousel").onclick = () => downloadZip("carousel", lastBuild.slideFiles);
 $("#download-photos").onclick = () => downloadZip("photos", lastBuild.photos);
 
 $("#copy-caption").onclick = () => navigator.clipboard.writeText($("#caption").value);
