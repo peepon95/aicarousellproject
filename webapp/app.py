@@ -34,6 +34,13 @@ os.makedirs(INBOX, exist_ok=True)
 app.mount("/inbox", StaticFiles(directory=INBOX), name="inbox")
 
 
+def _blob_oidc_token(request: Request) -> str:
+    return (
+        request.headers.get("x-vercel-oidc-token", "").strip()
+        or os.environ.get("VERCEL_OIDC_TOKEN", "").strip()
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 def home():
     with open(INDEX, encoding="utf-8") as f:
@@ -114,13 +121,14 @@ class ScreenshotPreviewReq(BaseModel):
 
 
 @app.post("/screenshot-preview")
-def screenshot_preview(req: ScreenshotPreviewReq):
+def screenshot_preview(req: ScreenshotPreviewReq, request: Request):
     url = req.url.strip()
     if not url.startswith(("http://", "https://")):
         return JSONResponse({"error": "Enter a full link starting with http:// or https://."}, status_code=400)
     safe_name = "".join(c if c.isalnum() else "_" for c in req.name).strip("_")[:50] or "preview"
+    oidc_token = _blob_oidc_token(request)
     try:
-        M.require_blob()
+        M.require_blob(oidc_token)
     except RuntimeError as e:
         return JSONResponse({"error": str(e)}, status_code=503)
     try:
@@ -136,7 +144,7 @@ def screenshot_preview(req: ScreenshotPreviewReq):
             return JSONResponse({"error": f"Screenshot preview failed: {e}"}, status_code=502)
     try:
         image_url = (
-            M.publish_file(path)
+            M.publish_file(path, oidc_token=oidc_token)
             if M.IS_VERCEL
             else f"/screenshots/{os.path.basename(path)}"
         )
@@ -218,12 +226,13 @@ def repo_status(job_id: str):
 
 
 @app.post("/build")
-def build(req: BuildReq):
+def build(req: BuildReq, request: Request):
     resources = [r.model_dump() for r in req.resources]
     if not resources:
         return JSONResponse({"error": "no resources selected"}, status_code=400)
+    oidc_token = _blob_oidc_token(request)
     try:
-        M.require_blob()
+        M.require_blob(oidc_token)
     except RuntimeError as e:
         return JSONResponse({"error": str(e)}, status_code=503)
     try:
@@ -238,6 +247,7 @@ def build(req: BuildReq):
             result,
             P.OUT,
             os.path.join(ROOT, "backgrounds"),
+            oidc_token,
         )
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)

@@ -43,10 +43,12 @@ Import this repository with the **FastAPI** preset, keep the root directory at
 `PEXELS_API_KEY` in Vercel's Environment Variables.
 
 After the first deployment, connect a **public Vercel Blob** store from the
-project's Storage tab and redeploy. Blob storage keeps generated slides and ZIP
-downloads available across serverless requests. The hosted version uses
-generated resource preview cards instead of Playwright screenshots and hides
-the local-only Remotion video renderer.
+project's Storage tab and redeploy. Current Blob connections use Vercel's
+automatically rotating OIDC credentials plus `BLOB_STORE_ID`; no long-lived
+token needs to be copied. Blob storage keeps generated slides and ZIP downloads
+available across serverless requests. The hosted version uses generated
+resource preview cards instead of Playwright screenshots and hides the
+local-only Remotion video renderer.
 
 See `webapp/README.md` for the complete deployment settings and local web-app
 commands.

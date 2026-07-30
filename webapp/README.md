@@ -28,9 +28,10 @@ Add `OPENAI_API_KEY` and `PEXELS_API_KEY` in Vercel's Environment Variables.
 `GITHUB_TOKEN` and `OPENAI_MODEL` are optional.
 
 After the first deployment, open the project's **Storage** tab and connect a
-**public Vercel Blob** store. Vercel adds `BLOB_READ_WRITE_TOKEN`
-automatically; redeploy once so generated slides and ZIP downloads use durable
-storage.
+**public Vercel Blob** store. New connections add `BLOB_STORE_ID` and inject a
+short-lived OIDC token into Vercel Function requests automatically. Redeploy
+once so generated slides and ZIP downloads use durable storage. A legacy
+`BLOB_READ_WRITE_TOKEN` is also supported, but is not required for new stores.
 
 Vercel uses generated resource cards instead of Playwright browser captures.
 The Remotion repo-video renderer is hidden there because it requires a
