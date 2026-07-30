@@ -14,9 +14,24 @@ Flow: pick a **mode** → **Find resources** → check/uncheck the shortlist and
 each hook → **Build carousel** → previews render, click to open/download PNGs (in `out/`).
 
 ### Modes
-- **Type a topic** — e.g. "vibe coding tools" → trending GitHub repos → carousel. ✅
-- **Paste links** — GitHub repos / tool URLs, one per line → one slide each. ✅
-- **Reference mimic** — paste a TikTok/IG URL → copy its look + hook structure. 🚧 Phase 2, stubbed.
+- **Type a topic** — researched tutorial, explainer, or resource roundup with validated sources. ✅
+- **Video link** — public YouTube/Shorts, TikTok, or Instagram Reel → captions/audio transcript → carousel. ✅
+
+### Repo explainer video (separate section at the bottom of the page)
+Paste any GitHub repo URL → **Analyze repo** reads the README + stats via the
+GitHub API and drafts a 6-scene script (editable voiceover, name, tagline,
+accent colors) → **Generate explainer video** renders a 38s animated 9:16 mp4.
+
+Under the hood (`webapp/repo_video.py`):
+- LLM plan via the same OpenAI helper as topic mode; star/fork/language stats
+  are injected from the GitHub API so numbers are never hallucinated.
+- Voiceover: `edge-tts` (en-US-AndrewNeural), auto re-paced if a line runs long.
+- Render: `RepoExplainer` composition in the shared Remotion project
+  (`REMOTION_DIR`, default `/Users/eevontan/my-video`,
+  `src/RepoExplainerComposition.tsx`) driven entirely by `--props`; the mp4
+  lands in `out/` and streams back in the UI. Render runs as a background job,
+  polled at `/repo/status/{job}` (takes a few minutes).
+- Optional `GITHUB_TOKEN` in `.env` raises the GitHub API rate limit.
 
 ## Daily draft agent (Mac cron, draft-only — never auto-posts)
 ```bash

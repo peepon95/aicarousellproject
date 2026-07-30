@@ -10,9 +10,9 @@ __pycache__/
 backgrounds/
 screenshots/
 
-# Web app test-run output (throwaway; keep curated examples in out/ tracked)
-out/web_*
-out/draft_*
+# Generated web app output. Existing curated examples remain tracked;
+# use `git add -f out/<file>` when intentionally adding a new example.
+out/*
 inbox/
 webapp/__pycache__/
 

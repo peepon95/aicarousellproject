@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pillow
+playwright
+requests
+python-dotenv
+yt-dlp
+openai
+youtube-transcript-api

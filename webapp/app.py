@@ -5,12 +5,15 @@ Run:  .venv/bin/uvicorn webapp.app:app --reload --port 8000
 Open: http://localhost:8000
 """
 import os
+import io
+import zipfile
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import pipeline as P
+import repo_video as RV
 
 ROOT = P.ROOT
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -19,6 +22,12 @@ INDEX = os.path.join(HERE, "templates", "index.html")
 
 # serve generated slides + inbox drafts
 app.mount("/out", StaticFiles(directory=P.OUT), name="out")
+SCREENSHOTS = os.path.join(ROOT, "screenshots")
+os.makedirs(SCREENSHOTS, exist_ok=True)
+app.mount("/screenshots", StaticFiles(directory=SCREENSHOTS), name="screenshots")
+BACKGROUNDS = os.path.join(ROOT, "backgrounds")
+os.makedirs(BACKGROUNDS, exist_ok=True)
+app.mount("/backgrounds", StaticFiles(directory=BACKGROUNDS), name="backgrounds")
 INBOX = os.path.join(ROOT, "inbox")
 os.makedirs(INBOX, exist_ok=True)
 app.mount("/inbox", StaticFiles(directory=INBOX), name="inbox")
@@ -39,17 +48,15 @@ class PullReq(BaseModel):
 def pull(req: PullReq):
     if req.mode == "topic":
         try:
-            cands = P.pull_github(req.query, n=12)
+            result = P.generate_topic_carousel(req.query, count=8)
         except Exception as e:
-            return JSONResponse({"error": f"GitHub pull failed: {e}"}, status_code=502)
-        return {"candidates": cands}
-    if req.mode == "links":
-        urls = [u for u in req.query.replace(",", "\n").splitlines() if u.strip()]
-        return {"candidates": [P.resource_from_url(u) for u in urls]}
-    if req.mode == "reference":
-        return JSONResponse(
-            {"error": "Reference mimic is Phase 2 — not wired up yet."},
-            status_code=501)
+            return JSONResponse({"error": f"Topic generation failed: {e}"}, status_code=502)
+        return result
+    if req.mode in ("youtube", "video"):
+        try:
+            return P.generate_video_carousel(req.query, count=8)
+        except Exception as e:
+            return JSONResponse({"error": f"Video breakdown failed: {e}"}, status_code=502)
     return JSONResponse({"error": "unknown mode"}, status_code=400)
 
 
@@ -60,6 +67,14 @@ class Resource(BaseModel):
     stars: int = 0
     hook: str = ""
     kind: str = ""
+    why: str = ""
+    what_title: str = "WHAT IT DOES"
+    why_title: str = "WHY YOU'LL NEED IT"
+    dedupe_key: str = ""
+    part: int = 1
+    part_title: str = ""
+    needs_screenshot: bool = True
+    visual_url: str = ""
 
 
 class BuildReq(BaseModel):
@@ -67,6 +82,112 @@ class BuildReq(BaseModel):
     bg_query: str = "cozy interior warm light"
     cover_title: str = "AI RESOURCES"
     cover_hook: str = ""
+    include_what_it_does: bool = True
+    include_why_youll_need_it: bool = True
+    split_mode: str = "suggested"
+    comment_keyword: str = "CLAUDE"
+
+
+class ReviseReq(BaseModel):
+    resources: list[Resource]
+    cover_hook: str = ""
+    instruction: str
+
+
+class DownloadReq(BaseModel):
+    files: list[str]
+    kind: str = "carousel"
+
+
+class ScreenshotPreviewReq(BaseModel):
+    url: str
+    name: str = "preview"
+    description: str = ""
+
+
+@app.post("/screenshot-preview")
+def screenshot_preview(req: ScreenshotPreviewReq):
+    url = req.url.strip()
+    if not url.startswith(("http://", "https://")):
+        return JSONResponse({"error": "Enter a full link starting with http:// or https://."}, status_code=400)
+    safe_name = "".join(c if c.isalnum() else "_" for c in req.name).strip("_")[:50] or "preview"
+    try:
+        path = P.capture(url, f"preview_{safe_name}")
+        fallback = False
+    except Exception as e:
+        try:
+            path = P.C.build_resource_preview(
+                req.name or "Website", url, req.description,
+                out=f"preview_{safe_name}_fallback.png")
+            fallback = True
+        except Exception:
+            return JSONResponse({"error": f"Screenshot preview failed: {e}"}, status_code=502)
+    return {"image": f"/screenshots/{os.path.basename(path)}", "fallback": fallback}
+
+
+@app.post("/download")
+def download(req: DownloadReq):
+    base = P.OUT if req.kind == "carousel" else os.path.join(ROOT, "backgrounds")
+    safe_files = []
+    for name in req.files:
+        clean = os.path.basename(name)
+        path = os.path.join(base, clean)
+        if clean == name and os.path.isfile(path):
+            safe_files.append((clean, path))
+    if not safe_files:
+        return JSONResponse({"error": "No downloadable files found."}, status_code=404)
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, path in safe_files:
+            archive.write(path, arcname=name)
+    data.seek(0)
+    filename = "carousel-images.zip" if req.kind == "carousel" else "carousel-photos.zip"
+    return StreamingResponse(data, media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.post("/revise")
+def revise(req: ReviseReq):
+    if not req.instruction.strip():
+        return JSONResponse({"error": "Enter an instruction for the edit."}, status_code=400)
+    try:
+        return P.revise_carousel(
+            [r.model_dump() for r in req.resources], req.cover_hook, req.instruction)
+    except Exception as e:
+        return JSONResponse({"error": f"Draft edit failed: {e}"}, status_code=502)
+
+
+class RepoAnalyzeReq(BaseModel):
+    url: str
+
+
+class RepoRenderReq(BaseModel):
+    plan: dict
+
+
+@app.post("/repo/analyze")
+def repo_analyze(req: RepoAnalyzeReq):
+    try:
+        return RV.analyze_repo(req.url)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"error": f"Repo analysis failed: {e}"}, status_code=502)
+
+
+@app.post("/repo/render")
+def repo_render(req: RepoRenderReq):
+    if not req.plan.get("scenes"):
+        return JSONResponse({"error": "Analyze a repo first."}, status_code=400)
+    return {"job": RV.start_render(req.plan)}
+
+
+@app.get("/repo/status/{job_id}")
+def repo_status(job_id: str):
+    job = RV.job_status(job_id)
+    if not job:
+        return JSONResponse({"error": "unknown job"}, status_code=404)
+    return job
 
 
 @app.post("/build")
@@ -77,7 +198,11 @@ def build(req: BuildReq):
     try:
         result = P.build_carousel(
             resources, bg_query=req.bg_query,
-            cover_title=req.cover_title, cover_hook=req.cover_hook or None)
+            cover_title=req.cover_title, cover_hook=req.cover_hook or None,
+            include_what_it_does=req.include_what_it_does,
+            include_why_youll_need_it=req.include_why_youll_need_it,
+            split_mode=req.split_mode,
+            comment_keyword=req.comment_keyword)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
     return result

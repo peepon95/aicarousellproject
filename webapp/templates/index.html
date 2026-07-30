@@ -5,83 +5,125 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Carousel Studio</title>
 <style>
-  :root { --bg:#0f0d0b; --card:#1b1713; --line:#2e2822; --ink:#f3ece2; --mut:#a99e8f; --acc:#e8a15a; }
+  :root { --bg:#f3f1ea; --card:#fffdf8; --line:#1d1d1b; --ink:#171714; --mut:#6f6b62; --acc:#f06a3c; --sun:#f7c94b; --blue:#7695ff; }
   * { box-sizing:border-box; }
-  body { margin:0; font:15px/1.5 -apple-system,system-ui,sans-serif; background:var(--bg); color:var(--ink); }
-  header { padding:22px 24px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; }
+  body { margin:0; font:15px/1.5 -apple-system,system-ui,sans-serif; color:var(--ink);
+    background:radial-gradient(circle at 9% 6%,#ffe5d7 0 9%,transparent 25%),radial-gradient(circle at 92% 18%,#dbe4ff 0 8%,transparent 24%),var(--bg); }
+  header { padding:22px 24px; border-bottom:2px solid var(--line); display:flex; align-items:baseline; gap:12px; background:rgba(255,253,248,.9); }
   header h1 { font-size:19px; margin:0; letter-spacing:.3px; }
   header span { color:var(--mut); font-size:13px; }
   main { max-width:960px; margin:0 auto; padding:24px; }
   .modes { display:flex; gap:8px; margin-bottom:16px; }
-  .modes button { flex:1; padding:12px; background:var(--card); color:var(--mut); border:1px solid var(--line);
-    border-radius:12px; cursor:pointer; font-size:14px; }
-  .modes button.on { color:var(--ink); border-color:var(--acc); background:#241d16; }
-  textarea, input { width:100%; background:var(--card); color:var(--ink); border:1px solid var(--line);
-    border-radius:10px; padding:11px; font:inherit; margin-bottom:10px; }
+  .modes button { flex:1; padding:13px; background:var(--card); color:var(--mut); border:2px solid var(--line);
+    border-radius:999px; cursor:pointer; font-size:14px; box-shadow:2px 3px 0 var(--line); }
+  .modes button.on { color:var(--ink); background:var(--sun); transform:translate(-1px,-1px); box-shadow:4px 5px 0 var(--line); }
+  textarea, input, select { width:100%; background:var(--card); color:var(--ink); border:2px solid var(--line);
+    border-radius:12px; padding:11px; font:inherit; margin-bottom:10px; }
   textarea { min-height:70px; resize:vertical; }
   .row { display:flex; gap:10px; }
   .row > * { flex:1; }
-  button.go { background:var(--acc); color:#221706; border:none; border-radius:10px; padding:12px 18px;
-    font-weight:600; cursor:pointer; }
+  button.go { background:var(--acc); color:#171714; border:2px solid var(--line); border-radius:999px; padding:12px 18px;
+    font-weight:700; cursor:pointer; box-shadow:3px 4px 0 var(--line); }
   button.go:disabled { opacity:.5; cursor:default; }
   .hint { color:var(--mut); font-size:13px; margin:2px 0 10px; }
-  .cand { display:flex; gap:12px; align-items:flex-start; background:var(--card); border:1px solid var(--line);
-    border-radius:12px; padding:12px; margin-bottom:8px; }
-  .cand.sel { border-color:var(--acc); }
+  .cand { display:flex; gap:12px; align-items:flex-start; background:var(--card); border:2px solid var(--line);
+    border-radius:18px; padding:14px; margin-bottom:10px; box-shadow:3px 4px 0 #d7d1c5; }
+  .cand.sel { background:#fff7df; box-shadow:4px 5px 0 var(--line); }
   .cand input[type=checkbox] { margin-top:4px; width:18px; height:18px; accent-color:var(--acc); flex:0 0 auto; }
   .cand .meta { flex:1; }
   .cand .nm { font-weight:600; }
   .cand .ds { color:var(--mut); font-size:13px; }
+  .cand .ds a { color:inherit; }
   .cand .hk { margin-top:6px; }
-  .cand .hk input { margin:0; font-size:13px; }
+  .cand .hk input { margin:0 0 7px; font-size:13px; }
+  .cand textarea { min-height:58px; margin:0 0 7px; font-size:13px; }
+  .link-row { display:flex; gap:8px; align-items:flex-start; }
+  .link-row input { margin:0 0 7px; font-size:13px; }
+  .preview-shot { width:100%; max-height:280px; object-fit:contain; margin:4px 0 10px; border:1px solid var(--line); border-radius:8px; background:#eee; }
+  .preview-btn { white-space:nowrap; padding:9px 12px; border:2px solid var(--line); border-radius:10px; background:var(--card); font-weight:700; cursor:pointer; }
+  .field-label { color:var(--mut); font-size:11px; text-transform:uppercase; letter-spacing:.7px; }
+  .build-option { display:flex; align-items:center; gap:9px; margin:2px 0 14px; font-weight:600; }
+  .build-option input { width:18px; height:18px; margin:0; accent-color:var(--acc); }
+  .prompt-box { margin:14px 0; padding:16px; background:#dfe7ff; border:2px solid var(--line); border-radius:18px; box-shadow:4px 5px 0 var(--line); }
+  .part-badge,.visual-badge { display:inline-block; margin:0 6px 6px 0; padding:3px 8px; border:1.5px solid var(--line); border-radius:999px; font-size:11px; font-weight:700; background:var(--sun); }
+  .visual-badge { background:#d8f5df; }
   .stars { color:var(--acc); font-size:13px; white-space:nowrap; }
   .section { margin-top:26px; }
   h2 { font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--mut); }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
   .grid a img { width:100%; border-radius:10px; border:1px solid var(--line); display:block; }
+  .series-title { margin:22px 0 10px; font-size:18px; }
+  .actions { display:flex; flex-wrap:wrap; gap:10px; margin:14px 0; }
+  .actions button { background:var(--card); }
+  .slideshow { position:fixed; inset:0; z-index:10; background:rgba(16,14,12,.94); display:grid; place-items:center; padding:30px 80px; }
+  .slideshow[hidden] { display:none; }
+  .slideshow img { max-width:100%; max-height:88vh; border-radius:14px; box-shadow:0 20px 70px #000; }
+  .slide-nav { position:fixed; top:50%; transform:translateY(-50%); border:0; border-radius:999px; width:52px; height:52px; font-size:28px; cursor:pointer; }
+  #slide-prev { left:18px; } #slide-next { right:18px; }
+  #slide-close { position:fixed; top:18px; right:18px; border:0; border-radius:999px; padding:10px 14px; cursor:pointer; }
+  #slide-count { position:fixed; bottom:15px; color:white; }
   .err { color:#e88; font-size:13px; }
   .spin { color:var(--mut); }
 </style>
 </head>
 <body>
-<header><h1>🎠 AI Carousel Studio</h1><span>topic · links · reference — pick, approve, build</span></header>
+<header><h1>🎠 AI Carousel Studio</h1><span>topic · video — prompt, edit, approve, build</span></header>
 <main>
   <div class="modes">
     <button data-mode="topic" class="on">Type a topic</button>
-    <button data-mode="links">Paste links</button>
-    <button data-mode="reference">Reference mimic</button>
+    <button data-mode="video">Video link</button>
+  </div>
+  <div id="input-video" hidden>
+    <input id="q-video" placeholder="Paste a YouTube, Shorts, TikTok, or Instagram Reel URL">
+    <div class="hint">Uses captions when available, otherwise transcribes audio from supported public videos. Private or login-only posts cannot be imported.</div>
   </div>
 
   <div id="input-topic">
-    <input id="q-topic" placeholder="e.g. vibe coding tools, claude skills, mcp servers">
-    <div class="hint">Finds trending GitHub repos for the topic, screenshots each, builds a carousel.</div>
-  </div>
-  <div id="input-links" hidden>
-    <textarea id="q-links" placeholder="Paste GitHub repos or tool URLs, one per line"></textarea>
-    <div class="hint">Each link becomes one slide (GitHub gets star count + description auto-filled).</div>
-  </div>
-  <div id="input-reference" hidden>
-    <input id="q-reference" placeholder="Paste a TikTok / Instagram post URL">
-    <div class="hint">Phase 2: extracts the post's palette + hook structure and applies it. Not wired yet.</div>
+    <input id="q-topic" placeholder="e.g. how to install Hermes Agent, Claude Code plugins, stop doomscrolling">
+    <div class="hint">Researches the topic and drafts a tutorial, explainer, or resource roundup with valid sources.</div>
   </div>
 
   <button class="go" id="pull">Find resources →</button>
   <div id="pull-status" class="hint"></div>
 
   <div class="section" id="shortlist-wrap" hidden>
-    <h2>Shortlist — pick your winners &amp; tweak hooks</h2>
+    <h2>Draft slides — select and edit everything shown on each slide</h2>
     <div id="candidates"></div>
-    <div class="row" style="margin-top:14px">
-      <input id="cover-hook" placeholder="Cover hook (optional)">
-      <input id="bg-query" value="cozy interior warm light" placeholder="Background vibe">
+    <div class="prompt-box">
+      <div class="field-label">Prompt this draft</div>
+      <textarea id="revise-prompt" placeholder="e.g. Make this five beginner-friendly tools, rewrite the hooks with more personality, and remove anything too developer-heavy."></textarea>
+      <button class="go" id="revise">Apply prompt to draft ✦</button>
+      <div id="revise-status" class="hint"></div>
     </div>
+    <div class="row" style="margin-top:14px">
+      <input id="cover-hook" placeholder="Cover hook — generated for you, editable">
+      <input id="bg-query" value="warm editorial interiors muted film aesthetic" placeholder="Background vibe (leave blank for none)">
+    </div>
+    <label class="build-option"><input id="include-what-it-does" type="checkbox" checked>Include the editable first section</label>
+    <label class="build-option"><input id="include-why-youll-need-it" type="checkbox" checked>Include the editable second section</label>
+    <div class="row">
+      <div><div class="field-label">Carousel breakdown</div><select id="split-mode"><option value="suggested">Use suggested breakdown</option><option value="single">Keep as one carousel</option><option value="two">Break into two parts</option></select></div>
+      <div><div class="field-label">Comment keyword</div><input id="comment-keyword" value="CLAUDE" maxlength="30" placeholder="e.g. CLAUDE or REPO"></div>
+    </div>
+    <div id="split-hint" class="hint"></div>
     <button class="go" id="build">Build carousel ✨</button>
     <div id="build-status" class="hint"></div>
   </div>
 
   <div class="section" id="result-wrap" hidden>
     <h2>Your slides</h2>
-    <div class="grid" id="slides"></div>
+    <div id="slides"></div>
+    <div class="actions">
+      <button class="go" id="preview-slides">Preview slideshow ▶</button>
+      <button class="go" id="download-carousel">Download carousel ZIP ↓</button>
+      <button class="go" id="download-photos">Download background photos ↓</button>
+    </div>
+    <div class="prompt-box">
+      <div class="field-label">Edit this carousel</div>
+      <textarea id="carousel-edit-prompt" placeholder="e.g. Make slide 2 punchier, simplify the explanations, and change the cover hook."></textarea>
+      <button class="go" id="edit-carousel">Apply changes &amp; rebuild ✦</button>
+      <div id="carousel-edit-status" class="hint">Describe changes in plain language, then regenerate the carousel.</div>
+    </div>
     <div id="canva-box" style="margin-top:18px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px">
       <h2 style="margin-top:0">Push to Canva (editable)</h2>
       <div class="hint">Outline saved. In Claude, say <b>"send the latest carousel to Canva"</b> — I'll run the outline-review → generate flow and hand back an editable design link.</div>
@@ -89,16 +131,66 @@
       <button class="go" id="copy-caption">Copy caption</button>
     </div>
   </div>
+
+  <div class="section" id="repo-video-wrap" style="margin-top:40px;padding-top:26px;border-top:2px solid var(--line)">
+    <h2>🎬 Repo explainer video — paste a GitHub repo, get an animated short</h2>
+    <input id="repo-url" placeholder="https://github.com/owner/repo">
+    <div class="hint">Reads the repo's README and stats, writes a 6-scene script with voiceover, then renders a 38s vertical video with Remotion.</div>
+    <button class="go" id="repo-analyze">Analyze repo →</button>
+    <div id="repo-analyze-status" class="hint"></div>
+
+    <div id="repo-plan-wrap" hidden style="margin-top:14px">
+      <div class="row">
+        <div><div class="field-label">Display name</div><input id="rp-name"></div>
+        <div><div class="field-label">Tagline</div><input id="rp-tagline"></div>
+      </div>
+      <div class="row">
+        <div><div class="field-label">Accent color</div><input id="rp-accent"></div>
+        <div><div class="field-label">Accent color 2</div><input id="rp-accent2"></div>
+      </div>
+      <div id="rp-scenes"></div>
+      <button class="go" id="repo-render">Generate explainer video 🎬</button>
+      <div id="repo-render-status" class="hint"></div>
+    </div>
+
+    <div id="repo-result-wrap" hidden style="margin-top:16px">
+      <h2>Your explainer video</h2>
+      <video id="repo-player" controls style="width:100%;max-width:420px;border:2px solid var(--line);border-radius:14px;box-shadow:4px 5px 0 var(--line);background:#000"></video>
+      <div class="actions"><a id="repo-download" class="go" style="text-decoration:none;display:inline-block" download>Download video ↓</a></div>
+    </div>
+  </div>
 </main>
+<div class="slideshow" id="slideshow" hidden>
+  <button id="slide-close">Close ✕</button>
+  <button class="slide-nav" id="slide-prev">‹</button>
+  <img id="slide-image" alt="Carousel slide preview">
+  <button class="slide-nav" id="slide-next">›</button>
+  <div id="slide-count"></div>
+</div>
 
 <script>
 let mode = "topic";
+let lastBuildResources = [];
+let lastBuild = {slides:[], photos:[]};
+let slideIndex = 0;
+const draftState = {topic:null, video:null};
 const $ = s => document.querySelector(s);
 
 document.querySelectorAll(".modes button").forEach(b => b.onclick = () => {
+  saveCurrentDraft();
   mode = b.dataset.mode;
   document.querySelectorAll(".modes button").forEach(x => x.classList.toggle("on", x === b));
-  ["topic","links","reference"].forEach(m => $("#input-" + m).hidden = (m !== mode));
+  ["topic","video"].forEach(m => $("#input-" + m).hidden = (m !== mode));
+  $("#result-wrap").hidden = true;
+  const saved = draftState[mode];
+  if (saved) {
+    $("#cover-hook").value = saved.coverHook;
+    $("#bg-query").value = saved.bgQuery;
+    renderCandidates(saved.resources, new Set(saved.selectedIndices));
+  } else {
+    $("#shortlist-wrap").hidden = true;
+    $("#candidates").innerHTML = "";
+  }
 });
 
 $("#pull").onclick = async () => {
@@ -111,57 +203,285 @@ $("#pull").onclick = async () => {
       body: JSON.stringify({mode, query})});
     const d = await r.json();
     if (d.error) return setStatus("#pull-status", d.error, false, true);
+    if (d.cover_hook) $("#cover-hook").value = d.cover_hook;
+    $("#split-mode").value = "suggested";
+    $("#split-hint").textContent = d.part_count === 2 ? "Suggested: break this carousel into two parts." : "Suggested: keep this as one carousel.";
     renderCandidates(d.candidates || []);
-    setStatus("#pull-status", `Found ${d.candidates.length}.`, false);
+    draftState[mode] = {resources:d.candidates || [], selectedIndices:[], coverHook:$("#cover-hook").value, bgQuery:$("#bg-query").value};
+    const source = d.transcript_source ? ` via ${d.transcript_source}` : "";
+    setStatus("#pull-status", `Found ${d.candidates.length}${source}.`, false);
   } catch(e) { setStatus("#pull-status", e.message, false, true); }
 };
 
-function renderCandidates(cands) {
+function renderCandidates(cands, selectedIndices = new Set()) {
   const box = $("#candidates"); box.innerHTML = "";
+  const multiPart = cands.some(c => Number(c.part || 1) > 1);
   cands.forEach((c, i) => {
-    const el = document.createElement("div"); el.className = "cand sel";
+    const selected = selectedIndices.has(i);
+    const el = document.createElement("div"); el.className = "cand" + (selected ? " sel" : "");
     el.innerHTML = `
-      <input type="checkbox" checked>
+      <input type="checkbox" ${selected ? "checked" : ""}>
       <div class="meta">
+        ${multiPart ? `<span class="part-badge">Part ${Number(c.part || 1)}</span>` : ""}
+        ${c.needs_screenshot ? `<span class="visual-badge">Website visual</span>` : ""}
         <div class="nm">${esc(c.name)}</div>
-        <div class="ds">${esc(c.desc || c.url)}</div>
-        <div class="hk"><input placeholder="slide hook (≤7 words)" value=""></div>
+        <div class="field-label">Link shown + screenshot source</div>
+        <div class="link-row"><input class="edit-url" type="url" value="${esc(c.visual_url || c.url)}" placeholder="https://example.com"><button type="button" class="preview-btn">Preview</button></div>
+        <div class="preview-status hint"></div>
+        <img class="preview-shot" alt="Website screenshot preview" hidden>
+        <div class="hk"><div class="field-label">Slide title / hook</div><input placeholder="slide hook" value="${esc(c.hook || c.name)}"></div>
+        <div class="field-label">What it does — editable section title</div><input class="edit-what-title" value="${esc(c.what_title || "WHAT IT DOES")}" placeholder="WHAT IT DOES">
+        <div class="field-label">What it does — editable carousel copy</div><textarea class="edit-desc" placeholder="Edit the exact text shown below the section title">${esc(c.desc || "")}</textarea>
+        <div class="field-label">Why you’ll need it — editable section title</div><input class="edit-why-title" value="${esc(c.why_title || "WHY YOU'LL NEED IT")}" placeholder="WHY YOU'LL NEED IT">
+        <div class="field-label">Why you’ll need it — editable carousel copy</div><textarea class="edit-why">${esc(c.why || "")}</textarea>
       </div>
       <div class="stars">${c.stars ? "★ " + c.stars.toLocaleString() : ""}</div>`;
     el.dataset.idx = i; el._data = c;
     const cb = el.querySelector("input[type=checkbox]");
     cb.onchange = () => el.classList.toggle("sel", cb.checked);
+    el.querySelector(".preview-btn").onclick = () => previewScreenshot(el);
     box.appendChild(el);
   });
   $("#shortlist-wrap").hidden = false;
 }
 
+function saveCurrentDraft() {
+  const els = [...document.querySelectorAll(".cand")];
+  if (!els.length) return;
+  draftState[mode] = {
+    resources: els.map(candidateData),
+    selectedIndices: els.filter(el => el.querySelector("input[type=checkbox]").checked).map(el => Number(el.dataset.idx)),
+    coverHook: $("#cover-hook").value,
+    bgQuery: $("#bg-query").value
+  };
+}
+
+function candidateData(el) {
+  const url = el.querySelector(".edit-url").value.trim();
+  return {...el._data,
+    url,
+    visual_url: url,
+    hook: el.querySelector(".hk input").value.trim(),
+    what_title: el.querySelector(".edit-what-title").value.trim() || "WHAT IT DOES",
+    why_title: el.querySelector(".edit-why-title").value.trim() || "WHY YOU'LL NEED IT",
+    desc: el.querySelector(".edit-desc").value.trim(),
+    why: el.querySelector(".edit-why").value.trim()
+  };
+}
+
+async function previewScreenshot(el) {
+  const data = candidateData(el);
+  const status = el.querySelector(".preview-status");
+  const image = el.querySelector(".preview-shot");
+  if (!data.url) { status.textContent = "Enter a link first."; status.className = "preview-status hint err"; return; }
+  status.textContent = "Capturing preview…"; status.className = "preview-status hint spin";
+  image.hidden = true;
+  try {
+    const r = await fetch("/screenshot-preview", {method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({url:data.url, name:data.name, description:data.desc})});
+    const d = await r.json();
+    if (d.error) { status.textContent = d.error; status.className = "preview-status hint err"; return; }
+    image.src = d.image + "?t=" + Date.now(); image.hidden = false;
+    status.textContent = d.fallback ? "This site blocked capture, so a fallback preview will be used." : "Screenshot preview ready.";
+    status.className = "preview-status hint";
+  } catch(e) { status.textContent = e.message; status.className = "preview-status hint err"; }
+}
+
+$("#revise").onclick = async () => {
+  const instruction = $("#revise-prompt").value.trim();
+  if (!instruction) return setStatus("#revise-status", "Tell the AI what to change.", false, true);
+  const els = [...document.querySelectorAll(".cand")];
+  const selectedIndices = new Set(els.filter(el => el.querySelector("input[type=checkbox]").checked).map(el => Number(el.dataset.idx)));
+  const resources = els.map(candidateData);
+  setStatus("#revise-status", "Rewriting the draft…", true);
+  try {
+    const r = await fetch("/revise", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({resources, cover_hook: $("#cover-hook").value, instruction})});
+    const d = await r.json();
+    if (d.error) return setStatus("#revise-status", d.error, false, true);
+    $("#cover-hook").value = d.cover_hook || $("#cover-hook").value;
+    renderCandidates(d.resources || [], selectedIndices);
+    saveCurrentDraft();
+    setStatus("#revise-status", "Draft updated. You can keep editing any field.", false);
+  } catch(e) { setStatus("#revise-status", e.message, false, true); }
+};
+
 $("#build").onclick = async () => {
   const resources = [...document.querySelectorAll(".cand")].filter(el =>
-    el.querySelector("input[type=checkbox]").checked).map(el => ({
-      ...el._data, hook: el.querySelector(".hk input").value.trim()
-    }));
+    el.querySelector("input[type=checkbox]").checked).map(candidateData);
   if (!resources.length) return setStatus("#build-status", "Pick at least one.", false, true);
-  setStatus("#build-status", `Building ${resources.length + 1} slides… (screenshots take a moment)`, true);
+  await buildCarousel(resources, "#build-status");
+};
+
+async function buildCarousel(resources, statusSelector) {
+  setStatus(statusSelector, `Building ${resources.length + 1} slides… (screenshots take a moment)`, true);
   try {
     const r = await fetch("/build", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({resources, bg_query: $("#bg-query").value,
-        cover_title: "AI RESOURCES", cover_hook: $("#cover-hook").value})});
+        cover_title: $("#cover-hook").value || "Tools worth knowing",
+        cover_hook: $("#cover-hook").value,
+        include_what_it_does: $("#include-what-it-does").checked,
+        include_why_youll_need_it: $("#include-why-youll-need-it").checked,
+        split_mode: $("#split-mode").value,
+        comment_keyword: $("#comment-keyword").value.trim() || "CLAUDE"})});
     const d = await r.json();
-    if (d.error) return setStatus("#build-status", d.error, false, true);
-    const grid = $("#slides"); grid.innerHTML = "";
-    d.slides.forEach(s => {
-      const url = "/out/" + s + "?t=" + Date.now();
-      grid.innerHTML += `<a href="${url}" target="_blank"><img src="${url}"></a>`;
+    if (d.error) { setStatus(statusSelector, d.error, false, true); return false; }
+    lastBuildResources = resources;
+    lastBuild = {slides:d.slides || [], photos:d.photos || []};
+    const slidesBox = $("#slides"); slidesBox.innerHTML = "";
+    const series = d.series || [{part:1,title:"Carousel",slides:d.slides || []}];
+    series.forEach(group => {
+      if (series.length > 1) slidesBox.innerHTML += `<h3 class="series-title">Part ${group.part}: ${esc(group.title || "")}</h3>`;
+      const grid = document.createElement("div"); grid.className = "grid";
+      (group.slides || []).forEach(s => {
+        const url = "/out/" + s + "?t=" + Date.now();
+        grid.innerHTML += `<a href="${url}" target="_blank"><img src="${url}"></a>`;
+      });
+      slidesBox.appendChild(grid);
     });
     if (d.outline) $("#caption").value = d.outline.caption || "";
     $("#result-wrap").hidden = false;
-    setStatus("#build-status", "Done — credits: " + (d.credits||[]).join("; "), false);
+    setStatus(statusSelector, "Done — carousel updated.", false);
     $("#result-wrap").scrollIntoView({behavior:"smooth"});
-  } catch(e) { setStatus("#build-status", e.message, false, true); }
+    return true;
+  } catch(e) { setStatus(statusSelector, e.message, false, true); return false; }
+}
+
+$("#edit-carousel").onclick = async () => {
+  const instruction = $("#carousel-edit-prompt").value.trim();
+  if (!instruction) return setStatus("#carousel-edit-status", "Tell the AI what to change.", false, true);
+  if (!lastBuildResources.length) return setStatus("#carousel-edit-status", "Build a carousel first.", false, true);
+  setStatus("#carousel-edit-status", "Applying your changes…", true);
+  try {
+    const r = await fetch("/revise", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({resources:lastBuildResources, cover_hook:$("#cover-hook").value, instruction})});
+    const d = await r.json();
+    if (d.error) return setStatus("#carousel-edit-status", d.error, false, true);
+    $("#cover-hook").value = d.cover_hook || $("#cover-hook").value;
+    renderCandidates(d.resources || [], new Set((d.resources || []).map((_, i) => i)));
+    lastBuildResources = d.resources || lastBuildResources;
+    $("#carousel-edit-prompt").value = "";
+    setStatus("#carousel-edit-status", "Changes applied. Rebuilding the carousel…", true);
+    await buildCarousel(lastBuildResources, "#carousel-edit-status");
+  } catch(e) { setStatus("#carousel-edit-status", e.message, false, true); }
 };
 
+function showSlide(index) {
+  if (!lastBuild.slides.length) return;
+  slideIndex = (index + lastBuild.slides.length) % lastBuild.slides.length;
+  $("#slide-image").src = "/out/" + lastBuild.slides[slideIndex] + "?t=" + Date.now();
+  $("#slide-count").textContent = `${slideIndex + 1} / ${lastBuild.slides.length}`;
+}
+$("#preview-slides").onclick = () => {
+  if (!lastBuild.slides.length) return;
+  $("#slideshow").hidden = false; showSlide(0);
+};
+$("#slide-close").onclick = () => $("#slideshow").hidden = true;
+$("#slide-prev").onclick = () => showSlide(slideIndex - 1);
+$("#slide-next").onclick = () => showSlide(slideIndex + 1);
+document.addEventListener("keydown", e => {
+  if ($("#slideshow").hidden) return;
+  if (e.key === "ArrowLeft") showSlide(slideIndex - 1);
+  if (e.key === "ArrowRight") showSlide(slideIndex + 1);
+  if (e.key === "Escape") $("#slideshow").hidden = true;
+});
+
+async function downloadZip(kind, files) {
+  if (!files.length) return alert(kind === "carousel" ? "Build a carousel first." : "This carousel has no downloaded background photos.");
+  const r = await fetch("/download", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({kind, files})});
+  if (!r.ok) return alert((await r.json()).error || "Download failed.");
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob); const a = document.createElement("a");
+  a.href = url; a.download = kind === "carousel" ? "carousel-images.zip" : "carousel-photos.zip";
+  a.click(); URL.revokeObjectURL(url);
+}
+$("#download-carousel").onclick = () => downloadZip("carousel", lastBuild.slides);
+$("#download-photos").onclick = () => downloadZip("photos", lastBuild.photos);
+
 $("#copy-caption").onclick = () => navigator.clipboard.writeText($("#caption").value);
+
+// ── Repo explainer video ──────────────────────────────────────────────────────
+let repoPlan = null;
+let repoPollTimer = null;
+const SCENE_LABELS = {title:"Scene 1 · Title hook", what:"Scene 2 · What it does", features:"Scene 3 · Features",
+  how:"Scene 4 · How you use it", stats:"Scene 5 · By the numbers", cta:"Scene 6 · Call to action"};
+
+$("#repo-analyze").onclick = async () => {
+  const url = $("#repo-url").value.trim();
+  if (!url) return setStatus("#repo-analyze-status", "Paste a GitHub repo link first.", false, true);
+  setStatus("#repo-analyze-status", "Reading the repo and writing the script… (~30s)", true);
+  $("#repo-plan-wrap").hidden = true; $("#repo-result-wrap").hidden = true;
+  try {
+    const r = await fetch("/repo/analyze", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({url})});
+    const d = await r.json();
+    if (d.error) return setStatus("#repo-analyze-status", d.error, false, true);
+    repoPlan = d;
+    renderRepoPlan(d);
+    setStatus("#repo-analyze-status", `Script ready for ${d.repo}. Edit anything below, then generate.`, false);
+  } catch(e) { setStatus("#repo-analyze-status", e.message, false, true); }
+};
+
+function renderRepoPlan(plan) {
+  $("#rp-name").value = plan.display_name || "";
+  $("#rp-tagline").value = plan.tagline || "";
+  $("#rp-accent").value = plan.accent || "#0070f3";
+  $("#rp-accent2").value = plan.accent2 || "#00c2ff";
+  const box = $("#rp-scenes"); box.innerHTML = "";
+  Object.keys(SCENE_LABELS).forEach(id => {
+    const scene = (plan.scenes || {})[id] || {};
+    box.innerHTML += `
+      <div class="field-label" style="margin-top:10px">${SCENE_LABELS[id]}${scene.headline ? ` — “${esc(scene.headline)}”` : ""}</div>
+      <textarea class="rp-vo" data-scene="${id}" placeholder="Voiceover for this scene" style="min-height:52px;font-size:13px">${esc(scene.vo || "")}</textarea>`;
+  });
+  $("#repo-plan-wrap").hidden = false;
+}
+
+$("#repo-render").onclick = async () => {
+  if (!repoPlan) return;
+  repoPlan.display_name = $("#rp-name").value.trim() || repoPlan.display_name;
+  repoPlan.tagline = $("#rp-tagline").value.trim() || repoPlan.tagline;
+  repoPlan.accent = $("#rp-accent").value.trim() || repoPlan.accent;
+  repoPlan.accent2 = $("#rp-accent2").value.trim() || repoPlan.accent2;
+  document.querySelectorAll(".rp-vo").forEach(t => {
+    if (repoPlan.scenes[t.dataset.scene]) repoPlan.scenes[t.dataset.scene].vo = t.value.trim();
+  });
+  $("#repo-render").disabled = true;
+  $("#repo-result-wrap").hidden = true;
+  setStatus("#repo-render-status", "Starting render job…", true);
+  try {
+    const r = await fetch("/repo/render", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({plan: repoPlan})});
+    const d = await r.json();
+    if (d.error) { $("#repo-render").disabled = false; return setStatus("#repo-render-status", d.error, false, true); }
+    pollRepoJob(d.job);
+  } catch(e) { $("#repo-render").disabled = false; setStatus("#repo-render-status", e.message, false, true); }
+};
+
+function pollRepoJob(jobId) {
+  clearInterval(repoPollTimer);
+  repoPollTimer = setInterval(async () => {
+    try {
+      const d = await (await fetch("/repo/status/" + jobId)).json();
+      if (d.status === "error") {
+        clearInterval(repoPollTimer); $("#repo-render").disabled = false;
+        return setStatus("#repo-render-status", d.error || "Render failed.", false, true);
+      }
+      if (d.status === "done") {
+        clearInterval(repoPollTimer); $("#repo-render").disabled = false;
+        setStatus("#repo-render-status", "Done — explainer video ready.", false);
+        const src = "/out/" + d.video + "?t=" + Date.now();
+        $("#repo-player").src = src;
+        $("#repo-download").href = src;
+        $("#repo-result-wrap").hidden = false;
+        $("#repo-result-wrap").scrollIntoView({behavior:"smooth"});
+        return;
+      }
+      const pct = d.progress ? ` ${Math.round(d.progress * 100)}%` : "";
+      setStatus("#repo-render-status", `${d.status}${pct} — ${d.detail || "working"}… (rendering takes a few minutes)`, true);
+    } catch(e) { /* transient poll error — keep polling */ }
+  }, 3000);
+}
 
 function setStatus(sel, msg, spin, err) {
   const el = $(sel); el.textContent = msg;
