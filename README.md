@@ -9,6 +9,11 @@ Pull trending resources → you pick the good ones → fetch a real stock photo
 per slide → screenshot each resource page → composite the volkan-style slide
 → export PNGs (and optionally push to Canva to tweak before posting).
 
+Source lanes can be locked to YouTube videos, YouTube channels, Substack
+articles, GitHub repositories, or official tools. Local mode also accepts a
+video or screen recording and analyzes both sampled frames and spoken audio.
+The editorial renderer supports 3:4, 9:16, and 4:5 canvases.
+
 ## One-time setup (~30 min)
 
 1. **Install Node.js + Claude Code** (if using the agent workflow):

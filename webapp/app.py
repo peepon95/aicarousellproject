@@ -6,6 +6,7 @@ Open: http://localhost:8000
 """
 import os
 import io
+import uuid
 import zipfile
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -32,6 +33,8 @@ app.mount("/backgrounds", StaticFiles(directory=BACKGROUNDS), name="backgrounds"
 INBOX = os.path.join(ROOT, "inbox")
 os.makedirs(INBOX, exist_ok=True)
 app.mount("/inbox", StaticFiles(directory=INBOX), name="inbox")
+UPLOADS = os.path.join(ROOT, "uploads")
+os.makedirs(UPLOADS, exist_ok=True)
 
 
 def _blob_oidc_token(request: Request) -> str:
@@ -57,13 +60,15 @@ def home():
 class PullReq(BaseModel):
     mode: str            # "topic" | "links" | "reference"
     query: str = ""      # topic text, or newline-separated URLs
+    source_type: str = "auto"
 
 
 @app.post("/pull")
 def pull(req: PullReq):
     if req.mode == "topic":
         try:
-            result = P.generate_topic_carousel(req.query, count=8)
+            result = P.generate_topic_carousel(
+                req.query, count=8, source_type=req.source_type)
         except Exception as e:
             return JSONResponse({"error": f"Topic generation failed: {e}"}, status_code=502)
         return result
@@ -73,6 +78,42 @@ def pull(req: PullReq):
         except Exception as e:
             return JSONResponse({"error": f"Video breakdown failed: {e}"}, status_code=502)
     return JSONResponse({"error": "unknown mode"}, status_code=400)
+
+
+@app.post("/upload-video")
+async def upload_video(request: Request):
+    """Analyze a local video or screen recording without keeping the upload."""
+    if P.IS_VERCEL:
+        return JSONResponse({
+            "error": "Video upload analysis is local-only because it needs ffmpeg."
+        }, status_code=503)
+    filename = request.headers.get("x-filename", "recording.mp4")
+    extension = os.path.splitext(filename)[1].lower()
+    if extension not in (".mp4", ".mov", ".m4v", ".webm", ".mkv"):
+        return JSONResponse({
+            "error": "Upload an MP4, MOV, M4V, WebM, or MKV recording."
+        }, status_code=400)
+    safe_stem = "".join(c if c.isalnum() else "_" for c in os.path.splitext(filename)[0])[:60]
+    path = os.path.join(
+        UPLOADS, f"{safe_stem or 'recording'}_{uuid.uuid4().hex[:10]}{extension}")
+    size = 0
+    try:
+        with open(path, "wb") as destination:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > 300 * 1024 * 1024:
+                    raise ValueError("Upload must be 300 MB or smaller")
+                destination.write(chunk)
+        if size == 0:
+            raise ValueError("The uploaded file is empty")
+        return P.generate_uploaded_video_carousel(path, count=8)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:
+        return JSONResponse({"error": f"Video analysis failed: {exc}"}, status_code=502)
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
 
 
 class Resource(BaseModel):
@@ -90,6 +131,10 @@ class Resource(BaseModel):
     part_title: str = ""
     needs_screenshot: bool = True
     visual_url: str = ""
+    source_type: str = "auto"
+    author: str = ""
+    published_at: str = ""
+    evidence: str = ""
 
 
 class BuildReq(BaseModel):
@@ -99,8 +144,10 @@ class BuildReq(BaseModel):
     cover_hook: str = ""
     include_what_it_does: bool = True
     include_why_youll_need_it: bool = True
-    split_mode: str = "suggested"
+    split_mode: str = "single"
     comment_keyword: str = "CLAUDE"
+    visual_style: str = "editorial_reference"
+    canvas_format: str = "editorial_3_4"
 
 
 class ReviseReq(BaseModel):
@@ -118,6 +165,7 @@ class ScreenshotPreviewReq(BaseModel):
     url: str
     name: str = "preview"
     description: str = ""
+    source_type: str = "auto"
 
 
 @app.post("/screenshot-preview")
@@ -132,10 +180,26 @@ def screenshot_preview(req: ScreenshotPreviewReq, request: Request):
     except RuntimeError as e:
         return JSONResponse({"error": str(e)}, status_code=503)
     try:
-        path = P.capture(url, f"preview_{safe_name}")
-        fallback = False
+        source_type = (
+            P.source_type_for_url(url)
+            if req.source_type in ("", "auto", "unknown", "video_source")
+            else req.source_type
+        )
+        if source_type == "youtube_video":
+            path = P.C.build_resource_preview(
+                req.name or "YouTube video", url, req.description,
+                out=f"preview_{safe_name}_youtube.png", require_image=True)
+            fallback = False
+        else:
+            path = P.capture(url, f"preview_{safe_name}", source_type=source_type)
+            fallback = False
     except Exception as e:
         try:
+            if P.source_type_for_url(url) == "youtube_video":
+                raise RuntimeError(
+                    "This YouTube URL has no usable public thumbnail. "
+                    "Choose a public, available video."
+                )
             path = P.C.build_resource_preview(
                 req.name or "Website", url, req.description,
                 out=f"preview_{safe_name}_fallback.png")
@@ -242,7 +306,9 @@ def build(req: BuildReq, request: Request):
             include_what_it_does=req.include_what_it_does,
             include_why_youll_need_it=req.include_why_youll_need_it,
             split_mode=req.split_mode,
-            comment_keyword=req.comment_keyword)
+            comment_keyword=req.comment_keyword,
+            visual_style=req.visual_style,
+            canvas_format=req.canvas_format)
         result = M.publish_carousel(
             result,
             P.OUT,

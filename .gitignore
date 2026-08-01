@@ -14,6 +14,7 @@ screenshots/
 # use `git add -f out/<file>` when intentionally adding a new example.
 out/*
 inbox/
+uploads/
 webapp/__pycache__/
 
 # macOS

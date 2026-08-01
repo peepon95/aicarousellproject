@@ -8,9 +8,15 @@ Volkan-style slide: a FULL-BLEED photo fills the frame, content composited on to
 On your machine backgrounds/ holds real Unsplash/Pexels photos.
 """
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
-import os, random, textwrap
+from html.parser import HTMLParser
+import io, json, os, random, re, textwrap, urllib.parse, urllib.request
 
-W, H = 1080, 1350
+CANVAS_FORMATS = {
+    "portrait_4_5": (1080, 1350),
+    "editorial_3_4": (1080, 1440),
+    "story_9_16": (1080, 1920),
+}
+W, H = CANVAS_FORMATS["portrait_4_5"]
 HERE = os.path.dirname(__file__)
 # All generators share a writable data root. Locally this remains the project
 # folder; Vercel points it at /tmp through webapp.pipeline.
@@ -31,6 +37,25 @@ _FONT_CANDIDATES = {
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ),
 }
+
+
+def configure_canvas(canvas_format="portrait_4_5"):
+    global W, H
+    W, H = CANVAS_FORMATS.get(canvas_format, CANVAS_FORMATS["portrait_4_5"])
+    return W, H
+
+
+def serif_font(sz, italic=False):
+    candidates = (
+        ("/System/Library/Fonts/Supplemental/Times New Roman Italic.ttf" if italic
+         else "/System/Library/Fonts/Supplemental/Times New Roman.ttf"),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSerif-Italic.ttf" if italic
+         else "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"),
+    )
+    for path in candidates:
+        if os.path.exists(path):
+            return ImageFont.truetype(path, sz)
+    return font(sz, False)
 def font(sz, bold=True):
     for path in _FONT_CANDIDATES[bool(bold)]:
         if os.path.exists(path):
@@ -77,62 +102,225 @@ def _wrap(d, text, fnt, max_w):
     if cur: lines.append(cur)
     return lines
 
-def build_resource_preview(name, url, description, out="resource_fallback.png"):
+
+class _OpenGraphParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.values = {}
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() != "meta":
+            return
+        values = dict(attrs)
+        key = values.get("property") or values.get("name") or ""
+        if key.lower().startswith("og:") and values.get("content"):
+            self.values[key.lower()] = values["content"].strip()
+
+
+def _source_metadata(url, name, description):
+    """Fetch real public preview metadata without pretending it is a screenshot."""
+    metadata = {"title": name, "description": description, "image": ""}
+    parsed = urllib.parse.urlparse(url)
+    try:
+        if parsed.netloc.lower().removeprefix("www.") in ("youtube.com", "youtu.be"):
+            endpoint = "https://www.youtube.com/oembed?" + urllib.parse.urlencode({
+                "url": url, "format": "json",
+            })
+            request = urllib.request.Request(endpoint, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(request, timeout=15) as response:
+                data = json.load(response)
+            metadata.update({
+                "title": data.get("title") or name,
+                "description": data.get("author_name") or description,
+                "image": data.get("thumbnail_url") or "",
+            })
+            return metadata
+        request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(request, timeout=15) as response:
+            markup = response.read(1_500_000).decode("utf-8", "ignore")
+        parser = _OpenGraphParser()
+        parser.feed(markup)
+        metadata.update({
+            "title": parser.values.get("og:title") or name,
+            "description": parser.values.get("og:description") or description,
+            "image": urllib.parse.urljoin(url, parser.values.get("og:image", "")),
+        })
+    except Exception:
+        pass
+    return metadata
+
+
+def _remote_image(url):
+    if not url:
+        return None
+    try:
+        request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = response.read(10_000_000)
+        return Image.open(io.BytesIO(data)).convert("RGB")
+    except Exception:
+        return None
+
+def build_resource_preview(name, url, description, out="resource_fallback.png",
+                           require_image=False):
     """Create an honest, polished preview when a site blocks automation.
 
     This is intentionally not a fake browser screenshot: it is a branded
     resource card containing only metadata we already know.
     """
-    im = Image.new("RGBA", (1200, 820), (246, 240, 227, 255))
+    metadata = _source_metadata(url, name, description)
+    source_host = urllib.parse.urlparse(url).netloc.lower().removeprefix("www.")
+    is_youtube = source_host in ("youtube.com", "youtu.be")
+    preview = None
+    if is_youtube and metadata["image"]:
+        # oEmbed commonly returns hqdefault, a 4:3 wrapper. Prefer a genuine
+        # 16:9 thumbnail so titles and artwork are not cropped away.
+        image_base = metadata["image"].rsplit("/", 1)[0]
+        for filename in ("maxresdefault.jpg", "mqdefault.jpg"):
+            preview = _remote_image(f"{image_base}/{filename}")
+            if preview is not None:
+                break
+    if preview is None:
+        preview = _remote_image(metadata["image"])
+    if require_image and preview is None:
+        raise RuntimeError(
+            "The source did not provide a usable public thumbnail. "
+            "Choose a public video and preview it before building."
+        )
+    card_height = 900 if is_youtube and preview else 820
+    # YouTube previews mimic a clean native video card: edge-to-edge thumbnail
+    # plus a white metadata strip, without a decorative frame around it.
+    canvas_fill = ((255, 255, 255, 255) if is_youtube and preview
+                   else (246, 240, 227, 255))
+    im = Image.new("RGBA", (1200, card_height), canvas_fill)
     d = ImageDraw.Draw(im)
-    d.rounded_rectangle((54, 48, 1146, 772), radius=34,
-                        fill=(255, 252, 244), outline=(43, 39, 34), width=3)
-    d.rounded_rectangle((90, 86, 262, 130), radius=12, fill=(220, 92, 50))
-    d.text((110, 94), "WEBSITE", font=font(24, True), fill=(255, 255, 255))
-    nf = font(88, True)
-    name_lines = _wrap(d, name, nf, 980)[:2]
-    y = 190
+    if not (is_youtube and preview):
+        d.rounded_rectangle((54, 48, 1146, card_height - 48), radius=34,
+                            fill=(255, 252, 244), outline=(43, 39, 34), width=3)
+    y = 96
+    if preview:
+        target_w, target_h = (1200, 675) if is_youtube else (1020, 430)
+        ratio = (min if is_youtube else max)(
+            target_w / preview.width, target_h / preview.height)
+        preview = preview.resize((int(preview.width * ratio), int(preview.height * ratio)))
+        if is_youtube:
+            fitted = Image.new("RGBA", (target_w, target_h), (24, 23, 22, 255))
+            fitted.alpha_composite(
+                preview.convert("RGBA"),
+                ((target_w - preview.width) // 2, (target_h - preview.height) // 2),
+            )
+            preview = fitted
+        else:
+            px = max(0, (preview.width - target_w) // 2)
+            py = max(0, (preview.height - target_h) // 2)
+            preview = preview.crop(
+                (px, py, px + target_w, py + target_h)).convert("RGBA")
+        if not is_youtube:
+            mask = Image.new("L", (target_w, target_h), 0)
+            ImageDraw.Draw(mask).rounded_rectangle(
+                (0, 0, target_w, target_h), radius=24, fill=255)
+            preview.putalpha(mask)
+        im.alpha_composite(preview, (0, 0) if is_youtube else (90, 82))
+        d = ImageDraw.Draw(im)
+        y = 698 if is_youtube else 548
+    else:
+        d.rounded_rectangle((90, 86, 262, 130), radius=12, fill=(220, 92, 50))
+        d.text((110, 94), "SOURCE", font=font(24, True), fill=(255, 255, 255))
+        y = 190
+    nf = font(42 if is_youtube and preview else 52 if preview else 88, True)
+    text_x = 34 if is_youtube and preview else 90
+    text_width = 1132 if is_youtube and preview else 980
+    name_lines = _wrap(d, metadata["title"], nf, text_width)[:2]
     for line in name_lines:
-        d.text((90, y), line, font=nf, fill=(31, 29, 26)); y += 100
-    df = font(42, False)
-    for line in _wrap(d, description, df, 980)[:3]:
-        d.text((92, y+18), line, font=df, fill=(78, 71, 62)); y += 54
-    host = url.replace("https://", "").replace("http://", "").rstrip("/")
-    d.line((90, 670, 1110, 670), fill=(214, 200, 178), width=2)
-    d.text((92, 698), host, font=font(34, True), fill=(220, 92, 50))
+        d.text((text_x, y), line, font=nf, fill=(31, 29, 26)); y += nf.size + 8
+    df = font(30 if is_youtube and preview else 32 if preview else 42, False)
+    remaining = 1 if preview else 3
+    for line in _wrap(d, metadata["description"], df, text_width)[:remaining]:
+        d.text((text_x, y+8), line, font=df, fill=(78, 71, 62)); y += df.size + 12
+    if not is_youtube:
+        display_url = url.replace("https://", "").replace("http://", "").rstrip("/")
+        d.text((92, card_height - 100), display_url[:70], font=font(28, True),
+               fill=(220, 92, 50))
     p = os.path.join(SHOT, out)
     im.convert("RGB").save(p, quality=95)
     return p
 
-def build_cover(bg_name, kicker, title, subtitle, swipe="", out="cover.png"):
-    """Intro/cover slide: optional full-bleed photo and a viral hook.
-    No page counter or swipe button."""
+def _cover_title_parts(title):
+    """Split a cover into the italic topic phrase and bold continuation."""
+    cleaned = " ".join(str(title or "").split()).strip()
+    cleaned = re.sub(r"^\d+\s+", "", cleaned)
+    topic_phrases = (
+        "long video essays", "video essays", "video essay", "youtube channels",
+        "substack articles", "substacks", "philosophy essays", "psychology essays",
+        "research topics", "ai tools", "github projects", "topics", "movies",
+        "books", "essays", "tools", "projects",
+    )
+    lowered = cleaned.lower()
+    for phrase in topic_phrases:
+        index = lowered.find(phrase)
+        if index < 0:
+            continue
+        before = cleaned[:index].strip(" :,-")
+        after = cleaned[index + len(phrase):].strip(" :,-")
+        topic = cleaned[index:index + len(phrase)]
+        # Preserve meaningful words before the category, but not list counts.
+        if before and not before.isdigit():
+            topic = f"{before} {topic}"
+        return topic, after
+    words = cleaned.split()
+    cut = 2 if len(words) >= 5 else 1
+    return " ".join(words[:cut]), " ".join(words[cut:])
+
+
+def build_cover(bg_name, kicker, title, subtitle, swipe="", out="cover.png",
+                visual_style="detailed"):
+    """Full-bleed editorial topic cover with mixed serif and sans typography."""
     img = cover_photo(bg_name)
-    # Cinematic vertical gradient keeps the person visible while giving the
-    # oversized editorial hook enough contrast.
+    # Preserve the lived-in photograph. A restrained veil adds contrast without
+    # turning the source image into a dark generic backdrop.
     veil = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     vd = ImageDraw.Draw(veil)
     for y in range(H):
-        alpha = int(45 + 115 * (y / H))
-        vd.line((0, y, W, y), fill=(18, 15, 12, alpha))
+        alpha = int(18 + 62 * (y / H))
+        vd.line((0, y, W, y), fill=(14, 13, 12, alpha))
     img = Image.alpha_composite(img, veil)
     d = ImageDraw.Draw(img)
-    # top kicker pill
-    if kicker:
-        kf = font(34, True); kw = d.textlength(kicker, font=kf)
-        d.rounded_rectangle([(W-kw)//2-24, 150, (W+kw)//2+24, 212], radius=14, fill=(220,40,40))
-        d.text(((W-kw)//2, 162), kicker, font=kf, fill=(255,255,255))
-    # Oversized, left-aligned hook inspired by editorial TikTok covers.
-    hf = font(112, True)
-    lines = _wrap(d, title, hf, int(W*0.82))
-    while len(lines) > 5 and hf.size > 72:
-        hf = font(hf.size - 6, True)
-        lines = _wrap(d, title, hf, int(W*0.82))
-    lh = hf.size + 2
-    total = lh * len(lines)
-    y = max(100, (H - total)//2 - 35)
-    for ln in lines:
-        d.text((58, y), ln, font=hf, fill=(255, 247, 184)); y += lh
+    # The supplied references never show a Part 1/2 badge. The cover reads as
+    # one standalone topic, even when export tooling creates multiple files.
+    topic, continuation = _cover_title_parts(title)
+    topic_size = 150 if H >= 1800 else 132
+    main_size = 144 if H >= 1800 else 126
+    max_w = int(W * 0.88)
+    while True:
+        topic_font = serif_font(topic_size, italic=True)
+        main_font = font(main_size, True)
+        topic_lines = _wrap(d, topic, topic_font, max_w) if topic else []
+        main_lines = _wrap(d, continuation, main_font, max_w) if continuation else []
+        topic_lh = int(topic_size * 0.94)
+        main_lh = int(main_size * 0.91)
+        total = len(topic_lines) * topic_lh + len(main_lines) * main_lh
+        if topic_lines and main_lines:
+            total += 6
+        if total <= int(H * 0.72) and len(topic_lines) + len(main_lines) <= 7:
+            break
+        if topic_size <= 66 or main_size <= 62:
+            break
+        topic_size -= 6
+        main_size -= 6
+    # Put the block around the visual middle. Short hooks should fill the
+    # cover instead of floating near the top edge.
+    y = max(74, int(H * 0.47 - total / 2))
+    x = 58
+    for line in topic_lines:
+        d.text((x + 3, y + 4), line, font=topic_font, fill=(18, 17, 16, 150))
+        d.text((x, y), line, font=topic_font, fill=(201, 241, 250))
+        y += topic_lh
+    if topic_lines and main_lines:
+        y += 6
+    for line in main_lines:
+        d.text((x + 3, y + 4), line, font=main_font, fill=(18, 17, 16, 150))
+        d.text((x, y), line, font=main_font, fill=(255, 244, 168))
+        y += main_lh
     # subtitle
     if subtitle:
         y += 24
@@ -143,6 +331,43 @@ def build_cover(bg_name, kicker, title, subtitle, swipe="", out="cover.png"):
         d.rounded_rectangle([(W-sw)//2-26, H-190, (W+sw)//2+26, H-124], radius=16, fill=(255,255,255))
         d.text(((W-sw)//2, H-182), swipe, font=sf, fill=(20,20,20))
     p = os.path.join(OUT, out); img.convert("RGB").save(p, quality=95); return p
+
+
+def build_editorial_source(bg_name, shot_name, source_label, out="slide.png",
+                           use_photo_background=True):
+    """Reference-informed source slide: real capture, tactile photo, quiet credit."""
+    if use_photo_background and bg_name:
+        img = cover_photo(bg_name)
+        img = Image.alpha_composite(img, Image.new("RGBA", (W, H), (15, 14, 14, 32)))
+    else:
+        img = Image.new("RGBA", (W, H), (226, 222, 215, 255))
+    path = os.path.join(SHOT, shot_name or "")
+    if not shot_name or not os.path.exists(path):
+        p = os.path.join(OUT, out)
+        img.convert("RGB").save(p, quality=95)
+        return p
+    source = Image.open(path).convert("RGBA")
+    max_w, max_h = int(W * 0.78), int(H * 0.48)
+    ratio = min(max_w / source.width, max_h / source.height)
+    card_w = max(1, int(source.width * ratio))
+    card_h = max(1, int(source.height * ratio))
+    source = source.resize((card_w, card_h))
+    x = (W - card_w) // 2
+    y = max(int(H * 0.20), (H - card_h) // 2 - int(H * 0.03))
+    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rectangle(
+        (x + 9, y + 12, x + card_w + 9, y + card_h + 12), fill=(0, 0, 0, 110))
+    img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(18)))
+    img.alpha_composite(source, (x, y))
+    d = ImageDraw.Draw(img)
+    label = f"source: {source_label or 'website'}".lower()
+    credit_font = serif_font(46 if H >= 1800 else 40, italic=True)
+    credit_w = d.textlength(label, font=credit_font)
+    d.text(((W-credit_w)//2, y + card_h + 48), label, font=credit_font,
+           fill=(255, 250, 243), stroke_width=2, stroke_fill=(35, 31, 28))
+    p = os.path.join(OUT, out)
+    img.convert("RGB").save(p, quality=95)
+    return p
 
 def build(bg_name, page, title, subtitle, shot_name, why_text,
           use_photo_background=True, out="slide.png", source_url="",

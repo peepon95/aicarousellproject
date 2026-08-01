@@ -4,6 +4,7 @@ pillow
 playwright
 requests
 python-dotenv
+pyyaml
 yt-dlp
 openai
 youtube-transcript-api

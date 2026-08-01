@@ -9,6 +9,7 @@ One-time setup:
 """
 import os
 import re
+import urllib.parse
 from playwright.sync_api import sync_playwright
 
 HERE = os.path.dirname(__file__)
@@ -44,8 +45,53 @@ def _dismiss_consent(page):
       document.body.style.overflow = 'auto';
     }""")
 
-def capture(url, name, clip_height=820):
-    """Screenshot the top of a page. Returns local path."""
+def _source_type(url, requested="auto"):
+    if requested and requested != "auto":
+        return requested
+    parsed = urllib.parse.urlparse(url)
+    host, path = parsed.netloc.lower().removeprefix("www."), parsed.path
+    if host == "github.com":
+        return "github_repo"
+    if host in ("youtube.com", "m.youtube.com", "youtu.be"):
+        return "youtube_channel" if path.startswith(("/@", "/channel/", "/c/", "/user/")) else "youtube_video"
+    if host == "substack.com" or host.endswith(".substack.com"):
+        return "substack_article"
+    return "tool_website"
+
+
+def _content_selectors(source_type):
+    return {
+        "github_repo": ("main", "#repo-content-pjax-container"),
+        "youtube_video": ("#primary", "ytd-watch-flexy", "main"),
+        "youtube_channel": ("#page-header", "ytd-browse", "main"),
+        "substack_article": ("article", "main article", "main"),
+        "tool_website": ("main", "[role=main]"),
+    }.get(source_type, ("main", "[role=main]"))
+
+
+def _capture_content(page, out, source_type, clip_height):
+    """Crop around recognizable page content instead of browser chrome."""
+    for selector in _content_selectors(source_type):
+        try:
+            locator = page.locator(selector).first
+            if not locator.is_visible(timeout=700):
+                continue
+            box = locator.bounding_box()
+            if not box or box["width"] < 420 or box["height"] < 180:
+                continue
+            x = max(0, min(box["x"], 1279))
+            y = max(0, box["y"])
+            width = min(box["width"], 1280 - x)
+            height = min(max(420, clip_height), box["height"])
+            page.screenshot(path=out, clip={"x": x, "y": y, "width": width, "height": height})
+            return
+        except Exception:
+            continue
+    page.screenshot(path=out, clip={"x": 0, "y": 0, "width": 1280, "height": clip_height})
+
+
+def capture(url, name, clip_height=820, source_type="auto"):
+    """Capture a source-aware, editorial crop of a public page."""
     if os.environ.get("VERCEL"):
         raise RuntimeError(
             "Browser capture is disabled on Vercel; using the generated preview fallback."
@@ -53,7 +99,7 @@ def capture(url, name, clip_height=820):
     out = os.path.join(SHOT, name if name.endswith(".png") else name + ".png")
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page(viewport={"width": 1200, "height": 900},
+        page = browser.new_page(viewport={"width": 1280, "height": 960},
                                 device_scale_factor=2)
         # 'networkidle' rarely fires on GitHub (live connections stay open),
         # so wait for the DOM + a short settle instead.
@@ -61,6 +107,12 @@ def capture(url, name, clip_height=820):
         page.wait_for_timeout(2500)
         _dismiss_consent(page)
         page.wait_for_timeout(500)
+        page.add_style_tag(content="""
+          [role='dialog'], [aria-modal='true'], .modal-backdrop,
+          [class*='cookie'][style*='fixed'], [class*='consent'][style*='fixed'] {
+            display: none !important;
+          }
+        """)
         # Some sites (notably Replit) return a visually rendered Cloudflare
         # block page with HTTP 200. Never pass that off as a product preview.
         body = page.locator("body").inner_text(timeout=5000).lower()
@@ -73,7 +125,9 @@ def capture(url, name, clip_height=820):
         if (response and response.status >= 400) or any(m in body for m in blocked_markers):
             status = response.status if response else "unknown"
             raise RuntimeError(f"site blocked automated capture (HTTP {status})")
-        page.screenshot(path=out, clip={"x": 0, "y": 0, "width": 1200, "height": clip_height})
+        _capture_content(page, out, _source_type(url, source_type), clip_height)
+        if not os.path.exists(out) or os.path.getsize(out) < 12_000:
+            raise RuntimeError("page capture did not contain enough visible content")
         browser.close()
     return out
 

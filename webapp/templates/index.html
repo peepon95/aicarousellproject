@@ -45,7 +45,7 @@
   .build-option { display:flex; align-items:center; gap:9px; margin:2px 0 14px; font-weight:600; }
   .build-option input { width:18px; height:18px; margin:0; accent-color:var(--acc); }
   .prompt-box { margin:14px 0; padding:16px; background:#dfe7ff; border:2px solid var(--line); border-radius:18px; box-shadow:4px 5px 0 var(--line); }
-  .part-badge,.visual-badge { display:inline-block; margin:0 6px 6px 0; padding:3px 8px; border:1.5px solid var(--line); border-radius:999px; font-size:11px; font-weight:700; background:var(--sun); }
+  .visual-badge { display:inline-block; margin:0 6px 6px 0; padding:3px 8px; border:1.5px solid var(--line); border-radius:999px; font-size:11px; font-weight:700; background:var(--sun); }
   .visual-badge { background:#d8f5df; }
   .stars { color:var(--acc); font-size:13px; white-space:nowrap; }
   .section { margin-top:26px; }
@@ -67,11 +67,12 @@
 </style>
 </head>
 <body>
-<header><h1>🎠 AI Carousel Studio</h1><span>topic · video — prompt, edit, approve, build</span></header>
+<header><h1>🎠 AI Carousel Studio</h1><span>topic · link · upload · source locked</span></header>
 <main>
   <div class="modes">
     <button data-mode="topic" class="on">Type a topic</button>
     <button data-mode="video">Video link</button>
+    <button data-mode="upload">Upload recording</button>
   </div>
   <div id="input-video" hidden>
     <input id="q-video" placeholder="Paste a YouTube, Shorts, TikTok, or Instagram Reel URL">
@@ -80,7 +81,21 @@
 
   <div id="input-topic">
     <input id="q-topic" placeholder="e.g. how to install Hermes Agent, Claude Code plugins, stop doomscrolling">
-    <div class="hint">Researches the topic and drafts a tutorial, explainer, or resource roundup with valid sources.</div>
+    <select id="source-type">
+      <option value="auto">Auto choose the source type</option>
+      <option value="mixed_sources">Mixed public sources via OpenAI research</option>
+      <option value="youtube_video">YouTube videos only</option>
+      <option value="youtube_channel">YouTube channels only</option>
+      <option value="substack_article">Substack articles only</option>
+      <option value="github_repo">GitHub repositories only</option>
+      <option value="tool_website">Official tools and websites only</option>
+    </select>
+    <div class="hint">Strict lanes reject mismatched sources. Mixed research can combine verified YouTube, Substack, GitHub, and official websites.</div>
+  </div>
+
+  <div id="input-upload" hidden>
+    <input id="q-upload" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.m4v">
+    <div class="hint">Upload a screen recording or video up to 300 MB. The local app samples visible frames and transcribes speech, then deletes the upload.</div>
   </div>
 
   <button class="go" id="pull">Find resources →</button>
@@ -102,8 +117,12 @@
     <label class="build-option"><input id="include-what-it-does" type="checkbox" checked>Include the editable first section</label>
     <label class="build-option"><input id="include-why-youll-need-it" type="checkbox" checked>Include the editable second section</label>
     <div class="row">
-      <div><div class="field-label">Carousel breakdown</div><select id="split-mode"><option value="suggested">Use suggested breakdown</option><option value="single">Keep as one carousel</option><option value="two">Break into two parts</option></select></div>
+      <div><div class="field-label">Export structure</div><select id="split-mode"><option value="single">One carousel</option><option value="two">Two separate carousels</option></select></div>
       <div><div class="field-label">Comment keyword</div><input id="comment-keyword" value="CLAUDE" maxlength="30" placeholder="e.g. CLAUDE or REPO"></div>
+    </div>
+    <div class="row">
+      <div><div class="field-label">Visual treatment</div><select id="visual-style"><option value="editorial_reference">Editorial source card</option><option value="detailed">Detailed explainer card</option></select></div>
+      <div><div class="field-label">Canvas size</div><select id="canvas-format"><option value="editorial_3_4">3:4 editorial, 1080 × 1440</option><option value="story_9_16">9:16 source list, 1080 × 1920</option><option value="portrait_4_5">4:5 Instagram, 1080 × 1350</option></select></div>
     </div>
     <div id="split-hint" class="hint"></div>
     <button class="go" id="build">Build carousel ✨</button>
@@ -169,18 +188,25 @@
 </div>
 
 <script>
+// This page depends on FastAPI routes such as /pull and /build. Opening the
+// template itself with file:// has no backend, so send local users to the
+// running studio instead of allowing every request to fail with "Failed to fetch".
+if (window.location.protocol === "file:") {
+  window.location.replace("http://127.0.0.1:8000/");
+}
+
 let mode = "topic";
 let lastBuildResources = [];
 let lastBuild = {slides:[], slideFiles:[], photos:[], carouselDownload:"", photoDownload:""};
 let slideIndex = 0;
-const draftState = {topic:null, video:null};
+const draftState = {topic:null, video:null, upload:null};
 const $ = s => document.querySelector(s);
 
 document.querySelectorAll(".modes button").forEach(b => b.onclick = () => {
   saveCurrentDraft();
   mode = b.dataset.mode;
   document.querySelectorAll(".modes button").forEach(x => x.classList.toggle("on", x === b));
-  ["topic","video"].forEach(m => $("#input-" + m).hidden = (m !== mode));
+  ["topic","video","upload"].forEach(m => $("#input-" + m).hidden = (m !== mode));
   $("#result-wrap").hidden = true;
   const saved = draftState[mode];
   if (saved) {
@@ -194,37 +220,41 @@ document.querySelectorAll(".modes button").forEach(b => b.onclick = () => {
 });
 
 $("#pull").onclick = async () => {
-  const query = $("#q-" + mode).value.trim();
-  if (!query) return;
+  const uploadFile = mode === "upload" ? $("#q-upload").files[0] : null;
+  const query = mode === "upload" ? "" : $("#q-" + mode).value.trim();
+  if (mode === "upload" && !uploadFile) return setStatus("#pull-status", "Choose a recording first.", false, true);
+  if (mode !== "upload" && !query) return;
   setStatus("#pull-status", "Pulling…", true);
   $("#shortlist-wrap").hidden = true;
   try {
-    const r = await fetch("/pull", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({mode, query})});
+    const r = mode === "upload"
+      ? await fetch("/upload-video", {method:"POST", headers:{"Content-Type":uploadFile.type || "application/octet-stream", "X-Filename":encodeURIComponent(uploadFile.name)}, body:uploadFile})
+      : await fetch("/pull", {method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({mode, query, source_type: mode === "topic" ? $("#source-type").value : "auto"})});
     const d = await r.json();
     if (d.error) return setStatus("#pull-status", d.error, false, true);
     if (d.cover_hook) $("#cover-hook").value = d.cover_hook;
-    $("#split-mode").value = "suggested";
-    $("#split-hint").textContent = d.part_count === 2 ? "Suggested: break this carousel into two parts." : "Suggested: keep this as one carousel.";
+    if (d.recommended_canvas) $("#canvas-format").value = d.recommended_canvas;
+    $("#split-mode").value = "single";
+    $("#split-hint").textContent = "The default cover has no Part 1 or Part 2 label.";
     renderCandidates(d.candidates || []);
     draftState[mode] = {resources:d.candidates || [], selectedIndices:[], coverHook:$("#cover-hook").value, bgQuery:$("#bg-query").value};
-    const source = d.transcript_source ? ` via ${d.transcript_source}` : "";
+    const source = d.transcript_source ? ` via ${d.transcript_source}` : (d.source_type ? ` from ${d.source_type.replaceAll("_", " ")}` : "");
     setStatus("#pull-status", `Found ${d.candidates.length}${source}.`, false);
   } catch(e) { setStatus("#pull-status", e.message, false, true); }
 };
 
 function renderCandidates(cands, selectedIndices = new Set()) {
   const box = $("#candidates"); box.innerHTML = "";
-  const multiPart = cands.some(c => Number(c.part || 1) > 1);
   cands.forEach((c, i) => {
     const selected = selectedIndices.has(i);
     const el = document.createElement("div"); el.className = "cand" + (selected ? " sel" : "");
     el.innerHTML = `
       <input type="checkbox" ${selected ? "checked" : ""}>
       <div class="meta">
-        ${multiPart ? `<span class="part-badge">Part ${Number(c.part || 1)}</span>` : ""}
-        ${c.needs_screenshot ? `<span class="visual-badge">Website visual</span>` : ""}
+        ${c.needs_screenshot ? `<span class="visual-badge">${esc((c.source_type || "website").replaceAll("_", " "))}</span>` : ""}
         <div class="nm">${esc(c.name)}</div>
+        ${(c.author || c.published_at) ? `<div class="ds">${esc(c.author || "")}${c.author && c.published_at ? " · " : ""}${esc(c.published_at || "")}</div>` : ""}
         <div class="field-label">Link shown + screenshot source</div>
         <div class="link-row"><input class="edit-url" type="url" value="${esc(c.visual_url || c.url)}" placeholder="https://example.com"><button type="button" class="preview-btn">Preview</button></div>
         <div class="preview-status hint"></div>
@@ -234,6 +264,7 @@ function renderCandidates(cands, selectedIndices = new Set()) {
         <div class="field-label">What it does — editable carousel copy</div><textarea class="edit-desc" placeholder="Edit the exact text shown below the section title">${esc(c.desc || "")}</textarea>
         <div class="field-label">Why you’ll need it — editable section title</div><input class="edit-why-title" value="${esc(c.why_title || "WHY YOU'LL NEED IT")}" placeholder="WHY YOU'LL NEED IT">
         <div class="field-label">Why you’ll need it — editable carousel copy</div><textarea class="edit-why">${esc(c.why || "")}</textarea>
+        <div class="field-label">Source evidence</div><textarea class="edit-evidence" placeholder="The exact detail that proves this belongs in the roundup">${esc(c.evidence || "")}</textarea>
       </div>
       <div class="stars">${c.stars ? "★ " + c.stars.toLocaleString() : ""}</div>`;
     el.dataset.idx = i; el._data = c;
@@ -265,7 +296,8 @@ function candidateData(el) {
     what_title: el.querySelector(".edit-what-title").value.trim() || "WHAT IT DOES",
     why_title: el.querySelector(".edit-why-title").value.trim() || "WHY YOU'LL NEED IT",
     desc: el.querySelector(".edit-desc").value.trim(),
-    why: el.querySelector(".edit-why").value.trim()
+    why: el.querySelector(".edit-why").value.trim(),
+    evidence: el.querySelector(".edit-evidence").value.trim()
   };
 }
 
@@ -278,7 +310,7 @@ async function previewScreenshot(el) {
   image.hidden = true;
   try {
     const r = await fetch("/screenshot-preview", {method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({url:data.url, name:data.name, description:data.desc})});
+      body:JSON.stringify({url:data.url, name:data.name, description:data.desc, source_type:data.source_type || "auto"})});
     const d = await r.json();
     if (d.error) { status.textContent = d.error; status.className = "preview-status hint err"; return; }
     image.src = d.image + "?t=" + Date.now(); image.hidden = false;
@@ -323,7 +355,9 @@ async function buildCarousel(resources, statusSelector) {
         include_what_it_does: $("#include-what-it-does").checked,
         include_why_youll_need_it: $("#include-why-youll-need-it").checked,
         split_mode: $("#split-mode").value,
-        comment_keyword: $("#comment-keyword").value.trim() || "CLAUDE"})});
+        comment_keyword: $("#comment-keyword").value.trim() || "CLAUDE",
+        visual_style: $("#visual-style").value,
+        canvas_format: $("#canvas-format").value})});
     const d = await r.json();
     if (d.error) { setStatus(statusSelector, d.error, false, true); return false; }
     lastBuildResources = resources;
@@ -340,7 +374,6 @@ async function buildCarousel(resources, statusSelector) {
     const slidesBox = $("#slides"); slidesBox.innerHTML = "";
     const series = d.series || [{part:1,title:"Carousel",slides:d.slides || []}];
     series.forEach(group => {
-      if (series.length > 1) slidesBox.innerHTML += `<h3 class="series-title">Part ${group.part}: ${esc(group.title || "")}</h3>`;
       const grid = document.createElement("div"); grid.className = "grid";
       (group.slides || []).forEach(s => {
         const url = slideUrls[s] || ("/out/" + s + "?t=" + Date.now());

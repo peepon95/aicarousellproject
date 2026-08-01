@@ -27,6 +27,11 @@ runtime. Import the GitHub repository with:
 Add `OPENAI_API_KEY` and `PEXELS_API_KEY` in Vercel's Environment Variables.
 `GITHUB_TOKEN` and `OPENAI_MODEL` are optional.
 
+Topic research uses the Responses API in background mode so OpenAI web search
+can finish without a long-lived read timing out. The local defaults allow ten
+minutes and retry two transient status checks. Override them when needed with
+`OPENAI_BACKGROUND_MODE`, `OPENAI_TIMEOUT_SECONDS`, and `OPENAI_MAX_RETRIES`.
+
 After the first deployment, open the project's **Storage** tab and connect a
 **public Vercel Blob** store. New connections add `BLOB_STORE_ID` and inject a
 short-lived OIDC token into Vercel Function requests automatically. Redeploy
@@ -39,8 +44,36 @@ persistent worker and the separate local Remotion project. Both features remain
 available in the local Mac workflow.
 
 ### Modes
-- **Type a topic** — researched tutorial, explainer, or resource roundup with validated sources. ✅
-- **Video link** — public YouTube/Shorts, TikTok, or Instagram Reel → captions/audio transcript → carousel. ✅
+- **Type a topic**: choose Auto, YouTube videos, YouTube channels, Substack
+  articles, GitHub repositories, official tools, or Mixed public sources.
+  Strict modes reject every result outside the selected lane. Mixed mode uses
+  OpenAI web research and then applies the validator for each returned platform.
+- **Video link**: public YouTube/Shorts, TikTok, or Instagram Reel, then
+  captions or audio transcript to carousel.
+- **Upload recording**: local MP4, MOV, M4V, WebM, or MKV up to 300 MB. The app
+  samples up to 12 frames, transcribes speech, analyzes both, and deletes the
+  temporary upload. This requires `ffmpeg` and is local-only.
+
+### Source previews and visual style
+
+Playwright uses a source-specific crop instead of one generic browser crop:
+
+- GitHub captures the repository name, navigation, files, and About panel.
+- YouTube videos use verified oEmbed metadata and the real public thumbnail;
+  channels use the recognizable channel header.
+- Substack captures the article header and readable article body.
+- Tool sites capture the main product surface.
+
+The default `Editorial source card` treatment is based on the supplied
+reference system: real source card, tactile photographic background, quiet
+italic source credit. Choose 3:4 at 1080 × 1440, 9:16 at 1080 × 1920, or the
+older 4:5 at 1080 × 1350. `Detailed explainer card` keeps the existing title,
+description, and takeaway layout. Both treatments use one distinct cover photo,
+then lock a second exact background across every source slide and CTA.
+
+The default export is one standalone carousel. Covers contain no Part 1/2 badge
+or list count. Their topic phrase uses an italic serif and the remaining hook
+uses an oversized bold sans serif, following the supplied reference covers.
 
 ### Repo explainer video (separate section at the bottom of the page)
 Paste any GitHub repo URL → **Analyze repo** reads the README + stats via the
