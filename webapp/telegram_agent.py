@@ -225,7 +225,7 @@ def _dispatch(event_type: str, payload: dict) -> None:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "User-Agent": "ai-carousel-telegram-agent/1.0",
-            "X-GitHub-Api-Version": "2022-11-28",
+            "X-GitHub-Api-Version": "2026-03-10",
         },
     )
     try:
@@ -324,6 +324,11 @@ def set_webhook(public_url: str) -> dict:
     secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "").strip()
     if not secret:
         raise RuntimeError("Add TELEGRAM_WEBHOOK_SECRET before registering the webhook")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", secret):
+        raise RuntimeError(
+            "TELEGRAM_WEBHOOK_SECRET may contain only letters, numbers, underscores, "
+            "and hyphens"
+        )
     return _telegram_api("setWebhook", {
         "url": public_url.rstrip("/") + "/telegram/webhook",
         "secret_token": secret,
