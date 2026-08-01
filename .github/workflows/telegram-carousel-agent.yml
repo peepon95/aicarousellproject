@@ -61,3 +61,4 @@ jobs:
               --topic "$AGENT_TOPIC" \
               --source-type "$AGENT_SOURCE_TYPE" \
               --chat-id "$TELEGRAM_CHAT_ID"
+          fi
