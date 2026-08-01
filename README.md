@@ -58,6 +58,11 @@ local-only Remotion video renderer.
 See `webapp/README.md` for the complete deployment settings and local web-app
 commands.
 
+The project also includes an optional private Telegram agent. It suggests one
+carousel topic daily at 9 PM Malaysia time, accepts button approvals or any
+topic sent as a message, and returns slide previews plus a downloadable ZIP.
+See the Telegram setup section in `webapp/README.md`.
+
 ## The 20% that stays yours
 - Which resources make the cut (your taste).
 - Final Canva tweaks before posting.

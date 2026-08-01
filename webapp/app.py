@@ -6,6 +6,7 @@ Open: http://localhost:8000
 """
 import os
 import io
+import hmac
 import uuid
 import zipfile
 from fastapi import FastAPI, Request
@@ -16,6 +17,7 @@ from pydantic import BaseModel
 from . import media_storage as M
 from . import pipeline as P
 from . import repo_video as RV
+from . import telegram_agent as TA
 
 ROOT = P.DATA_ROOT
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -55,6 +57,42 @@ def home():
             1,
         )
     return HTMLResponse(html)
+
+
+@app.post("/telegram/webhook")
+async def telegram_webhook(request: Request):
+    expected = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "").strip()
+    supplied = request.headers.get("x-telegram-bot-api-secret-token", "").strip()
+    if not expected or not hmac.compare_digest(expected, supplied):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    try:
+        update = await request.json()
+        return {"ok": True, **TA.handle_update(update)}
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:
+        return JSONResponse({"error": f"Telegram agent failed: {exc}"}, status_code=502)
+
+
+@app.get("/telegram/daily")
+def telegram_daily(request: Request):
+    expected = os.environ.get("CRON_SECRET", "").strip()
+    supplied = request.headers.get("authorization", "").strip()
+    if not expected or not hmac.compare_digest(f"Bearer {expected}", supplied):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    try:
+        return {"ok": True, **TA.send_daily_suggestion()}
+    except Exception as exc:
+        return JSONResponse({"error": f"Daily suggestion failed: {exc}"}, status_code=502)
+
+
+@app.get("/telegram/health")
+def telegram_health():
+    return {
+        "bot_configured": TA.telegram_configured(),
+        "chat_configured": bool(os.environ.get("TELEGRAM_CHAT_ID", "").strip()),
+        "worker_configured": bool(os.environ.get("GITHUB_DISPATCH_TOKEN", "").strip()),
+    }
 
 
 class PullReq(BaseModel):

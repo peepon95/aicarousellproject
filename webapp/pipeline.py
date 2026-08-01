@@ -241,7 +241,7 @@ def _openai_json(prompt, use_web_search=True):
     if not key:
         raise RuntimeError("Add OPENAI_API_KEY to .env to generate topic or video carousels")
     request_data = {
-        "model": os.environ.get("OPENAI_MODEL", "gpt-5.2"),
+        "model": os.environ.get("OPENAI_MODEL", "").strip() or "gpt-5.2",
         "input": prompt + "\nReturn valid JSON only, with no markdown fences.",
         "max_output_tokens": 5000,
     }
@@ -365,7 +365,7 @@ def _openai_json_with_images(prompt, image_paths):
             "image_url": f"data:image/jpeg;base64,{encoded}",
         })
     payload = json.dumps({
-        "model": os.environ.get("OPENAI_MODEL", "gpt-5.2"),
+        "model": os.environ.get("OPENAI_MODEL", "").strip() or "gpt-5.2",
         "input": [{"role": "user", "content": content}],
     }).encode()
     request = urllib.request.Request(

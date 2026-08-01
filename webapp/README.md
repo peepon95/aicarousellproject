@@ -75,6 +75,47 @@ The default export is one standalone carousel. Covers contain no Part 1/2 badge
 or list count. Their topic phrase uses an italic serif and the remaining hook
 uses an oversized bold sans serif, following the supplied reference covers.
 
+### Telegram carousel agent
+
+The optional private Telegram agent supports two workflows:
+
+- At 9 PM Malaysia time, Vercel Cron calls `/telegram/daily` and sends one AI
+  topic suggestion with **Approve and build** and **Another idea** buttons.
+- Any normal message sent to the bot is treated as a topic. Approvals and
+  messages dispatch the `Telegram carousel agent` GitHub Action, which performs
+  the slower research and rendering, then sends every slide plus a ZIP back to
+  Telegram.
+
+Telegram keeps the preview images and ZIP in the chat. On iPhone or Android,
+open the ZIP and choose **Save to Files**. Telegram's own automatic media
+download setting controls whether previews are also cached on the phone.
+
+#### Private setup
+
+1. Create a bot with Telegram's `@BotFather` and copy the token.
+2. Add these Vercel production environment variables first:
+   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `GITHUB_DISPATCH_TOKEN`,
+   and `CRON_SECRET`. The GitHub token needs permission to trigger Actions for
+   this repository. Redeploy after adding them.
+3. Add GitHub Actions repository secrets: `TELEGRAM_BOT_TOKEN`,
+   `OPENAI_API_KEY`, and `PEXELS_API_KEY`. `OPENAI_MODEL` is optional.
+4. Register the webhook once from a machine whose `.env` contains the bot token
+   and the same webhook secret:
+
+   ```bash
+   python -m webapp.telegram_worker setup-webhook \
+     --url https://aicarousellproject.vercel.app
+   ```
+
+5. Send `/start` to the bot. It replies with your chat ID. Add that value as
+   `TELEGRAM_CHAT_ID` and `TELEGRAM_ALLOWED_CHAT_ID` in Vercel, and as the
+   `TELEGRAM_CHAT_ID` GitHub Actions secret. Redeploy once more. Restricting the
+   allowed chat ID makes the bot private to you.
+
+The cron expression in `vercel.json` is `0 13 * * *`: 13:00 UTC is 21:00 in
+Malaysia. The cron route requires Vercel's `Authorization: Bearer CRON_SECRET`
+header. The webhook separately verifies Telegram's secret-token header.
+
 ### Repo explainer video (separate section at the bottom of the page)
 Paste any GitHub repo URL → **Analyze repo** reads the README + stats via the
 GitHub API and drafts a 6-scene script (editable voiceover, name, tagline,

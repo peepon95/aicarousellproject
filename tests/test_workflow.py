@@ -10,9 +10,83 @@ from PIL import Image, ImageDraw
 
 from webapp import app as app_module
 from webapp import pipeline
+from webapp import telegram_agent
+from webapp import telegram_worker
 
 
 class SourceLaneTests(unittest.TestCase):
+    @patch.object(telegram_worker.T, "send_document")
+    @patch.object(telegram_worker.T, "send_photo")
+    @patch.object(telegram_worker.T, "send_message")
+    @patch.object(telegram_worker.P, "build_carousel")
+    @patch.object(telegram_worker.P, "generate_topic_carousel")
+    def test_telegram_worker_sends_previews_and_zip(
+            self, generate, build, send_message, send_photo, send_document):
+        generate.return_value = {
+            "cover_hook": "Video essays for a hard day",
+            "recommended_canvas": "story_9_16",
+            "candidates": [{
+                "name": "Essay", "url": "https://youtube.com/watch?v=abc12345678",
+            }],
+        }
+        with tempfile.TemporaryDirectory() as output:
+            for name in ("cover.png", "detail.png"):
+                with open(os.path.join(output, name), "wb") as image:
+                    image.write(b"fake png")
+            build.return_value = {"slides": ["cover.png", "detail.png"]}
+            with patch.object(telegram_worker.P, "OUT", output):
+                result = telegram_worker.build_and_send(
+                    "video essays for a hard day", "12345", "youtube_video")
+
+        self.assertEqual(send_photo.call_count, 2)
+        send_document.assert_called_once()
+        self.assertTrue(send_document.call_args.args[1].endswith(".zip"))
+        self.assertEqual(len(result["slides"]), 2)
+        self.assertGreaterEqual(send_message.call_count, 2)
+
+    def test_telegram_approval_payload_fits_platform_limit(self):
+        payload = telegram_agent._callback_data(
+            "Substack articles instead of doomscrolling and losing the evening",
+            "substack_article",
+        )
+        self.assertLessEqual(len(payload.encode("utf-8")), 64)
+        self.assertTrue(payload.startswith("b|s|"))
+
+    @patch.object(telegram_agent, "send_message")
+    @patch.object(telegram_agent, "request_carousel")
+    def test_telegram_topic_message_dispatches_carousel(self, request, send):
+        update = {"message": {
+            "chat": {"id": 12345},
+            "text": "video essays for when you feel sad",
+        }}
+        with patch.dict(os.environ, {"TELEGRAM_ALLOWED_CHAT_ID": "12345"}):
+            result = telegram_agent.handle_update(update)
+        request.assert_called_once_with(
+            "video essays for when you feel sad", 12345)
+        send.assert_called_once()
+        self.assertEqual(result["action"], "build")
+
+    @patch.object(telegram_agent, "send_message")
+    @patch.object(telegram_agent, "answer_callback")
+    @patch.object(telegram_agent, "request_carousel")
+    def test_telegram_approval_uses_locked_source_lane(
+            self, request, answer, send):
+        update = {"callback_query": {
+            "id": "callback-1",
+            "data": "b|s|Substack articles instead of doomscrolling",
+            "message": {"chat": {"id": 12345}},
+        }}
+        with patch.dict(os.environ, {"TELEGRAM_ALLOWED_CHAT_ID": "12345"}):
+            result = telegram_agent.handle_update(update)
+        answer.assert_called_once_with("callback-1", "Got it")
+        request.assert_called_once_with(
+            "Substack articles instead of doomscrolling",
+            12345,
+            "substack_article",
+        )
+        send.assert_called_once()
+        self.assertEqual(result["action"], "build")
+
     def test_background_research_recovers_from_a_poll_timeout(self):
         queued = io.BytesIO(json.dumps({
             "id": "resp_test", "status": "queued",
@@ -273,6 +347,38 @@ class WebContractTests(unittest.TestCase):
             "3:4 editorial",
         ):
             self.assertIn(label, html)
+
+    def test_telegram_webhook_rejects_missing_secret(self):
+        with patch.dict(os.environ, {"TELEGRAM_WEBHOOK_SECRET": "private-secret"}):
+            response = self.client.post("/telegram/webhook", json={})
+        self.assertEqual(response.status_code, 401)
+
+    @patch.object(telegram_agent, "handle_update", return_value={"action": "start"})
+    def test_telegram_webhook_accepts_verified_update(self, handle):
+        with patch.dict(os.environ, {"TELEGRAM_WEBHOOK_SECRET": "private-secret"}):
+            response = self.client.post(
+                "/telegram/webhook",
+                json={"update_id": 1},
+                headers={"x-telegram-bot-api-secret-token": "private-secret"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["action"], "start")
+        handle.assert_called_once_with({"update_id": 1})
+
+    @patch.object(telegram_agent, "send_daily_suggestion", return_value={
+        "topic": "AI tools for calmer work", "source_type": "tool_website",
+    })
+    def test_daily_telegram_route_requires_cron_secret(self, suggest):
+        with patch.dict(os.environ, {"CRON_SECRET": "cron-secret"}):
+            denied = self.client.get("/telegram/daily")
+            allowed = self.client.get(
+                "/telegram/daily",
+                headers={"authorization": "Bearer cron-secret"},
+            )
+        self.assertEqual(denied.status_code, 401)
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(allowed.json()["topic"], "AI tools for calmer work")
+        suggest.assert_called_once()
 
     @patch.object(pipeline, "generate_topic_carousel")
     def test_pull_forwards_source_lane(self, generate):

@@ -1,0 +1,63 @@
+name: Telegram carousel agent
+
+on:
+  repository_dispatch:
+    types: [telegram_carousel, telegram_suggestion]
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: Topic to build, or leave blank to send a suggestion
+        required: false
+        type: string
+      source_type:
+        description: Source lane
+        required: false
+        default: auto
+        type: string
+      chat_id:
+        description: Telegram chat ID override
+        required: false
+        type: string
+
+concurrency:
+  group: telegram-carousel-${{ github.event.client_payload.chat_id || inputs.chat_id || 'daily' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      GITHUB_TOKEN: ${{ github.token }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ github.event.client_payload.chat_id || inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+      AGENT_TOPIC: ${{ github.event.client_payload.topic || inputs.topic }}
+      AGENT_SOURCE_TYPE: ${{ github.event.client_payload.source_type || inputs.source_type || 'auto' }}
+      AGENT_EVENT: ${{ github.event.action }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+      - name: Install Chromium for source captures
+        if: env.AGENT_EVENT != 'telegram_suggestion' && env.AGENT_TOPIC != ''
+        run: python -m playwright install --with-deps chromium
+      - name: Send suggestion or build carousel
+        shell: bash
+        run: |
+          if [[ "$AGENT_EVENT" == "telegram_suggestion" || -z "$AGENT_TOPIC" ]]; then
+            python -m webapp.telegram_worker suggest --chat-id "$TELEGRAM_CHAT_ID"
+          else
+            python -m webapp.telegram_worker build \
+              --topic "$AGENT_TOPIC" \
+              --source-type "$AGENT_SOURCE_TYPE" \
+              --chat-id "$TELEGRAM_CHAT_ID"
