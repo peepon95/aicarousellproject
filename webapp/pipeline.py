@@ -415,9 +415,14 @@ def _url_is_valid(url):
         return False
 
 
-def generate_topic_carousel(topic, count=7, source_type="auto"):
+def generate_topic_carousel(
+        topic, count=7, source_type="auto", _allow_partial_youtube=False):
     """Research any topic and draft selectable carousel slides."""
     source_type = infer_source_type(topic, source_type)
+    if source_type == "youtube_video":
+        # Video-essay roundups are intentionally a compact set of four. Keeping
+        # this invariant here makes Telegram and the web UI behave identically.
+        count = 4
     runnable_only = source_type == "github_repo" and bool(re.search(
         r"\b(run|runnable|locally|self[ -]?host)\b", topic, re.I))
     source_match = re.search(r"https?://[^\s]+", topic)
@@ -449,9 +454,16 @@ important limitation or tip when supported by the source. Multiple slides may
 use the same source URL because they are separate tutorial steps. Set
 carousel_type to tutorial. Do not invent commands absent from official sources.
 """
+    youtube_count_note = ""
+    if source_type == "youtube_video":
+        youtube_count_note = """
+Return exactly 4 distinct, directly relevant YouTube videos from 4 unique video
+URLs. Do not return fewer than 4, repeat a video, or use a channel or playlist.
+"""
     prompt = f"""Create a factual Instagram carousel outline about: {topic}
 SOURCE LANE: {SOURCE_TYPES[source_type]}.
 HARD SOURCE RULE: {_source_prompt(source_type)}
+{youtube_count_note}
 First infer the user's intent. If the query asks for tools, plugins, apps,
 websites, resources, or alternatives, create a curated list of distinct named
 products—one actual product per slide, with its official product URL. Do not
@@ -511,6 +523,8 @@ GitHub results unless directly relevant.{github_note}"""
         dedupe_key = re.sub(r"[^a-z0-9]+", "-", dedupe_key or name.lower()).strip("-")
         if carousel_type == "resource_list":
             canonical_url = url.lower().split("#", 1)[0].rstrip("/")
+            if source_type == "youtube_video":
+                canonical_url = _youtube_id(url) or canonical_url
             subject_keys = {dedupe_key, canonical_url}
             if seen_subjects & subject_keys:
                 continue
@@ -545,7 +559,7 @@ GitHub results unless directly relevant.{github_note}"""
             "visual_url": visual_url if _url_is_valid(visual_url) else url,
             "dedupe_key": dedupe_key,
         })
-    if not slides:
+    if not slides and not (source_type == "youtube_video" and _allow_partial_youtube):
         raise RuntimeError(
             f"No valid {SOURCE_TYPES[source_type]} were returned. Try a more specific topic."
         )
@@ -555,6 +569,38 @@ GitHub results unless directly relevant.{github_note}"""
             "Mixed research returned only one source family. Try a broader topic so "
             "OpenAI can verify results across at least two public platforms."
         )
+    if (source_type == "youtube_video" and len(slides) < 4
+            and not _allow_partial_youtube):
+        excluded = ", ".join(slide["url"] for slide in slides)
+        supplement = generate_topic_carousel(
+            f"{topic}. Find additional distinct videos so the final list has four. "
+            f"Do not use these URLs: {excluded or 'none'}",
+            count=4,
+            source_type="youtube_video",
+            _allow_partial_youtube=True,
+        )
+        seen_urls = {
+            _youtube_id(slide["url"]) or slide["url"].lower().rstrip("/")
+            for slide in slides
+        }
+        for candidate in supplement["candidates"]:
+            canonical = (
+                _youtube_id(candidate["url"])
+                or candidate["url"].lower().rstrip("/")
+            )
+            if canonical not in seen_urls:
+                slides.append(candidate)
+                seen_urls.add(canonical)
+            if len(slides) == 4:
+                break
+    if (source_type == "youtube_video" and len(slides) < 4
+            and not _allow_partial_youtube):
+        raise RuntimeError(
+            "YouTube research could not verify four distinct videos. "
+            "Try a more specific video-essay topic."
+        )
+    if source_type == "youtube_video":
+        slides = slides[:4]
     return {"candidates": slides,
             "cover_hook": clean_cover_hook(
                 result.get("cover_hook") or cover_hook_for(topic, len(slides))),

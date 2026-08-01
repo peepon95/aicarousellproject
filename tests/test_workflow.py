@@ -25,9 +25,11 @@ class SourceLaneTests(unittest.TestCase):
         generate.return_value = {
             "cover_hook": "Video essays for a hard day",
             "recommended_canvas": "story_9_16",
-            "candidates": [{
-                "name": "Essay", "url": "https://youtube.com/watch?v=abc12345678",
-            }],
+            "candidates": [
+                {"name": f"Essay {index}",
+                 "url": f"https://youtube.com/watch?v=abc1234567{index}"}
+                for index in range(4)
+            ],
         }
         with tempfile.TemporaryDirectory() as output:
             for name in ("cover.png", "detail.png"):
@@ -43,6 +45,7 @@ class SourceLaneTests(unittest.TestCase):
         self.assertTrue(send_document.call_args.args[1].endswith(".zip"))
         self.assertEqual(len(result["slides"]), 2)
         self.assertGreaterEqual(send_message.call_count, 2)
+        self.assertEqual(len(build.call_args.args[0]), 4)
 
     def test_telegram_approval_payload_fits_platform_limit(self):
         payload = telegram_agent._callback_data(
@@ -212,11 +215,34 @@ class SourceLaneTests(unittest.TestCase):
                 },
             ],
         }
+        with self.assertRaisesRegex(RuntimeError, "four distinct videos"):
+            pipeline.generate_topic_carousel(
+                "things worth watching", source_type="youtube_video")
+        self.assertEqual(generate.call_count, 2)
+
+    @patch.object(pipeline, "_url_is_valid", return_value=True)
+    @patch.object(pipeline, "_openai_json")
+    def test_youtube_roundup_always_returns_four_distinct_videos(
+            self, generate, _valid):
+        generate.return_value = {
+            "carousel_type": "resource_list",
+            "cover_hook": "Video essays for a hard day",
+            "slides": [{
+                "name": f"Essay {index}",
+                "url": f"https://youtube.com/watch?v=abc1234567{index}",
+                "desc": "A thoughtful video essay.",
+                "why": "Watch it for a new perspective.",
+            } for index in range(6)],
+        }
         result = pipeline.generate_topic_carousel(
-            "things worth watching", source_type="youtube_video")
-        self.assertEqual(len(result["candidates"]), 1)
-        self.assertEqual(result["candidates"][0]["source_type"], "youtube_video")
-        self.assertEqual(result["recommended_canvas"], "story_9_16")
+            "video essays for a hard day", count=8, source_type="youtube_video")
+        self.assertEqual(len(result["candidates"]), 4)
+        self.assertEqual(
+            len({item["url"] for item in result["candidates"]}), 4)
+        self.assertTrue(all(
+            item["source_type"] == "youtube_video"
+            for item in result["candidates"]
+        ))
 
     @patch.object(pipeline, "_url_is_valid", return_value=True)
     @patch.object(pipeline, "_openai_json")
