@@ -19,3 +19,7 @@ webapp/__pycache__/
 
 # macOS
 .DS_Store
+
+# Local Vercel linkage and downloaded environment values
+.vercel/
+.env.local
