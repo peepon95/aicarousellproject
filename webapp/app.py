@@ -65,13 +65,31 @@ async def telegram_webhook(request: Request):
     supplied = request.headers.get("x-telegram-bot-api-secret-token", "").strip()
     if not expected or not hmac.compare_digest(expected, supplied):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
+    update = {}
     try:
         update = await request.json()
         return {"ok": True, **TA.handle_update(update)}
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     except Exception as exc:
-        return JSONResponse({"error": f"Telegram agent failed: {exc}"}, status_code=502)
+        # Telegram retries every non-2xx webhook response. A downstream worker
+        # problem should therefore be acknowledged once instead of creating an
+        # endless retry loop that repeatedly dispatches the same carousel.
+        print("Telegram agent update failed:", exc)
+        message = update.get("message") or {}
+        callback_message = (update.get("callback_query") or {}).get("message") or {}
+        chat_id = (
+            (message.get("chat") or {}).get("id")
+            or (callback_message.get("chat") or {}).get("id")
+        )
+        if chat_id:
+            TA._best_effort(
+                TA.send_message,
+                chat_id,
+                "I could not complete that request yet. The carousel worker may "
+                "still need setup. Please try again shortly.",
+            )
+        return {"ok": False, "handled": True}
 
 
 @app.get("/telegram/daily")

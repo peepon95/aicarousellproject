@@ -365,6 +365,24 @@ class WebContractTests(unittest.TestCase):
         self.assertEqual(response.json()["action"], "start")
         handle.assert_called_once_with({"update_id": 1})
 
+    @patch.object(telegram_agent, "send_message")
+    @patch.object(telegram_agent, "handle_update", side_effect=RuntimeError(
+        "worker is not configured"))
+    def test_telegram_webhook_acknowledges_worker_failure(self, handle, send):
+        update = {"update_id": 2, "message": {
+            "chat": {"id": 12345}, "text": "Build this topic",
+        }}
+        with patch.dict(os.environ, {"TELEGRAM_WEBHOOK_SECRET": "private-secret"}):
+            response = self.client.post(
+                "/telegram/webhook",
+                json=update,
+                headers={"x-telegram-bot-api-secret-token": "private-secret"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"ok": False, "handled": True})
+        handle.assert_called_once_with(update)
+        send.assert_called_once()
+
     @patch.object(telegram_agent, "send_daily_suggestion", return_value={
         "topic": "AI tools for calmer work", "source_type": "tool_website",
     })
